@@ -4,6 +4,37 @@ All notable changes to readmedaddy are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-02
+
+Every agent, one detector, and a machine-enforced local-only guarantee.
+
+### Added
+
+- **Standalone `--check` mode** on the drift detector
+  (`hooks/readme-drift.sh --check [--range A...B]`): agent-agnostic drift
+  detection for CI, git pre-commit hooks, and any coding agent. Exit 0 fresh /
+  1 drift (files on stdout) / 2 bad range; stateless and idempotent; ignores
+  the session-scoped `README_DADDY_HOOK` switch, respects `.readmedaddy.json`.
+  Covered by seven new hook tests.
+- **Composite GitHub Action** (`action.yml`): runs `--check --range` against a
+  PR's base and posts one sticky drift comment (`mode: comment`) or fails the
+  job (`mode: fail`). Dogfooded on this repo's own pull requests.
+- **Multi-agent install.** `install.sh` now installs for Claude Code
+  (`~/.claude/skills`), opencode (`~/.config/opencode/skills`, and it reads the
+  Claude path natively), and GitHub Copilot CLI/coding agent
+  (`~/.copilot/skills`), verifying each copy. Agents without a skills loader
+  (Cursor, Codex, Gemini CLI, Zed, …) hook in via one `AGENTS.md` line;
+  `DEST=/path` still installs anywhere.
+- **No-network guard** in `scripts/validate-skill.py`: CI fails if a network
+  primitive (`curl`, `wget`, `urllib`, `socket`, `requests.`, `/dev/tcp`, …)
+  appears in any shipped `.sh`/`.py` file — the local-only claim is enforced,
+  not asserted. SKILL.md now also instructs the model explicitly to operate
+  offline, an instruction that travels into every agent that loads the skill.
+- **README:** "Install — works with any agent" matrix and a "Local-only by
+  design" section (no telemetry, bounded atomic writes, what stays on-device,
+  and the one boundary readmedaddy cannot police — the host agent's own model
+  traffic). SECURITY.md documents the guard and the CI action's exact scope.
+
 ## [0.1.0] - 2026-07-02
 
 Initial release of the readmedaddy skill: generate or upgrade the best possible

@@ -1,0 +1,105 @@
+name: readmedaddy drift check
+description: >-
+  Comment or fail when README-relevant files (manifests, entrypoints, CI,
+  install scripts) changed in a pull request but the README did not.
+  Pure local git — no network calls of its own, no LLM, no data leaves the
+  runner. Configure per-repo with .readmedaddy.json.
+branding:
+  icon: book-open
+  color: purple
+
+inputs:
+  mode:
+    description: >-
+      What to do on drift: "comment" posts/updates one sticky PR comment;
+      "fail" fails the job (use as a required check).
+    required: false
+    default: comment
+  github-token:
+    description: Token used only to post the PR comment in comment mode.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  drift:
+    description: '"true" if drift was detected, else "false".'
+    value: ${{ steps.check.outputs.drift }}
+  files:
+    description: Newline-separated drifted files (empty when fresh).
+    value: ${{ steps.check.outputs.files }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        BASE_REF: ${{ github.base_ref }}
+      run: |
+        set -u
+        if [ -z "$BASE_REF" ]; then
+          echo "readmedaddy: not a pull_request event — nothing to compare, skipping." >&2
+          { echo "drift=false"; echo "files="; } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        # Make sure the base ref exists locally (works with fetch-depth: 0;
+        # with a shallow checkout the merge-base may be missing — see docs).
+        git fetch -q origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF" || true
+
+        set +e
+        files=$("${{ github.action_path }}/skills/readmedaddy/hooks/readme-drift.sh" \
+          --check --range "origin/$BASE_REF...HEAD")
+        rc=$?
+        set -e
+        case $rc in
+          0) drift=false ;;
+          1) drift=true ;;
+          *) echo "readmedaddy: could not resolve origin/$BASE_REF...HEAD — use actions/checkout with fetch-depth: 0." >&2
+             exit "$rc" ;;
+        esac
+        {
+          echo "drift=$drift"
+          echo 'files<<RMD_EOF'
+          printf '%s\n' "$files"
+          echo 'RMD_EOF'
+        } >> "$GITHUB_OUTPUT"
+        if [ "$drift" = true ]; then
+          echo "README drift detected:" >&2
+          printf '%s\n' "$files" >&2
+        fi
+
+    - id: gate
+      if: steps.check.outputs.drift == 'true'
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        FILES: ${{ steps.check.outputs.files }}
+      run: |
+        set -eu
+        body="<!-- readmedaddy-drift -->
+        ### readmedaddy: this PR may leave the README behind
+
+        These README-relevant files changed, but the README did not:
+
+        \`\`\`
+        $FILES
+        \`\`\`
+
+        If the change is user-visible, consider refreshing the README (e.g. ask your agent to run the **readmedaddy** skill). If the README is genuinely unaffected, ignore this — it will not repeat unless new drift appears."
+        if [ "$MODE" = fail ]; then
+          echo "$body"
+          echo "::error::README drift — README-relevant files changed but the README did not."
+          exit 1
+        fi
+        # Sticky comment: update the existing marker comment or create one.
+        existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq '[.[] | select(.body | startswith("<!-- readmedaddy-drift -->"))][0].id' 2>/dev/null || true)
+        if [ -n "$existing" ] && [ "$existing" != null ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null
+        else
+          gh api "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+        fi
+        echo "Posted drift comment on PR #$PR."

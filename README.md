@@ -15,7 +15,7 @@
 
 [![ci](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version](https://img.shields.io/badge/version-0.1.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
 [![Agent Skill](https://img.shields.io/badge/Claude%20Code-Agent%20Skill-8A2BE2.svg)](https://agentskills.io)
 
 **A [Claude Code](https://claude.ai/code) [Agent Skill](https://agentskills.io) that writes the README your repo deserves — and earns its score instead of asserting it.**
@@ -30,7 +30,8 @@ Most README tools fill one template. readmedaddy runs a contest and ships the re
 - [How it works](#how-it-works)
 - [The rubric: ten gates, weighted by archetype](#the-rubric-ten-gates-weighted-by-archetype)
 - [The ten archetypes](#the-ten-archetypes)
-- [Install](#install)
+- [Install — works with any agent](#install--works-with-any-agent)
+- [Local-only by design](#local-only-by-design)
 - [Keep it current: the auto-update hook](#keep-it-current-the-auto-update-hook)
 - [Usage and triggers](#usage-and-triggers)
 - [Tournament mode](#tournament-mode)
@@ -189,16 +190,36 @@ A README is only good relative to what the project is, so readmedaddy classifies
 
 Detection signals, must-have sections, tie-breakers, and exemplars for each live in [`references/archetypes.md`](skills/readmedaddy/references/archetypes.md). The README canon they draw on — Art-of-README, Standard-Readme, makeareadme, Best-README-Template, awesome-readme — is in [`references/famous-readme-patterns.md`](skills/readmedaddy/references/famous-readme-patterns.md).
 
-## Install
+## Install — works with any agent
 
-readmedaddy is a self-contained skill directory with no runtime dependencies. One step installs the skill and wires the [auto-update hook](#keep-it-current-the-auto-update-hook).
+readmedaddy is a self-contained folder of Markdown plus one POSIX-shell hook — no runtime dependencies, nothing to build, and nothing tied to a single vendor. One step installs it for every agent that reads [Agent Skills](https://agentskills.io) and wires the [auto-update hook](#keep-it-current-the-auto-update-hook):
 
 ```sh
 git clone https://github.com/Systemartis/readmedaddy.git
-cd readmedaddy && ./install.sh   # copies the skill into ~/.claude/skills, verifies it, registers the hook
+cd readmedaddy && ./install.sh
 ```
 
-`./install.sh` copies the skill, self-verifies it landed, then registers the Stop hook user-global so your READMEs stay watched across every project. Skip the hook with `./install.sh --no-hook`; remove it later with `python3 scripts/install-hook.py --uninstall`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destination, and is safe to re-run. Install elsewhere with `DEST=/path ./install.sh`, or copy `skills/readmedaddy/` into any agent's skills directory by hand.
+| Agent | How it loads readmedaddy |
+|---|---|
+| **Claude Code** | `~/.claude/skills/readmedaddy` — auto-triggers on the description; `/skills` lists it. The Stop hook registers here too. |
+| **opencode** | reads `~/.claude/skills` natively (also installed to `~/.config/opencode/skills`) |
+| **GitHub Copilot** (CLI / coding agent) | `~/.copilot/skills/readmedaddy` — `/skills list` to confirm |
+| **Cursor, Codex, Gemini CLI, Zed**, anything that reads `AGENTS.md` | vendor `skills/readmedaddy/` into the repo and add one line to `AGENTS.md`: *"When asked to write or improve a README, follow `skills/readmedaddy/SKILL.md`."* |
+| **Any other agent** | `DEST=/path ./install.sh` — the skill is plain Markdown; any agent that can read files can follow it |
+
+`./install.sh` copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with `--no-hook`; remove it later with `python3 scripts/install-hook.py --uninstall`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and (Claude Code only) your `settings.json`, and is safe to re-run.
+
+## Local-only by design
+
+Everything readmedaddy ships runs on your machine — stated here, and enforced by CI, not just promised.
+
+- **No network, ever, in shipped code.** The skill is Markdown; the hook, installer, and validator are POSIX shell and stdlib Python doing local git and file reads. A **no-network guard** in [`scripts/validate-skill.py`](scripts/validate-skill.py) fails the build if any network primitive (`curl`, `wget`, `urllib`, `socket`, `requests.`, `/dev/tcp`, …) appears in any shipped `.sh` or `.py` file.
+- **The skill orders the model to stay offline.** [`SKILL.md`](skills/readmedaddy/SKILL.md)'s contract: every fact comes from the local repository — no web searches, no remote templates, no URL lookups. The README canon it draws on is baked into the reference files so nothing needs fetching.
+- **No telemetry, no phone-home, no accounts.** Nothing is collected, counted, or reported anywhere. There is no server side.
+- **Bounded, atomic writes.** The skill writes one file (your README). The hook writes one cooldown file (`.readmedaddy/state`). The installer writes the skill folders and — Claude Code only — merges your `settings.json` via temp-file-plus-rename, so an interrupted write can't corrupt it.
+- **Small enough to audit.** One shell hook, one installer, one validator — read them before running; there are no dependencies, no build step, and no postinstall hooks to hide in.
+- **What's outside readmedaddy's control:** your agent's own model traffic. Run Claude Code or Copilot against a cloud model and your repo context goes wherever your agent sends it — for readmedaddy exactly as for every other task in that agent. Pair the skill with a locally-hosted model and the entire loop is airgap-friendly.
+- **The optional CI action** ([`action.yml`](action.yml)) runs in *your* CI against *your* repo: it fetches your own base branch and, in `comment` mode, posts one comment on your own PR using your `GITHUB_TOKEN`. In `fail` mode it makes no API calls at all. No third-party endpoint is ever contacted.
 
 ## Keep it current: the auto-update hook
 
@@ -213,6 +234,38 @@ It is deliberately quiet. No git repo, no README, or a config that turns it off,
 | **enforce** | Re-prompts on every Stop until the README actually changes — for projects with a hard "README tracks code" rule. |
 
 Configure it per project with a `.readmedaddy.json` (mode, the watched README, the watch list), or force a mode for one session with `README_DADDY_HOOK=notify|enforce|off`. Disable it entirely with `README_DADDY_HOOK=off`. Full behavior, the drift logic, and the loop-safety guards are in [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md).
+
+### The same detector, anywhere — no agent required
+
+The drift logic is a standalone POSIX script, so every surface uses one detector and one `.readmedaddy.json`:
+
+```sh
+skills/readmedaddy/hooks/readme-drift.sh --check                             # working tree
+skills/readmedaddy/hooks/readme-drift.sh --check --range origin/main...HEAD  # commit range
+```
+
+Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = bad range. `--check` writes no state, ignores the session-scoped `README_DADDY_HOOK` switch, and respects a project's `enabled: false`. Two ready-made wirings:
+
+**Git pre-commit warning** (works for every agent and every human — warns, never blocks):
+
+```sh
+# .git/hooks/pre-commit
+~/.claude/skills/readmedaddy/hooks/readme-drift.sh --check || echo "readmedaddy: consider refreshing the README before you push"
+```
+
+**Pull-request gate** with the bundled GitHub Action ([`action.yml`](action.yml)) — catches drift from contributors who use no agent at all:
+
+```yaml
+on: pull_request
+permissions: { contents: read, pull-requests: write }
+steps:
+  - uses: actions/checkout@v4
+    with: { fetch-depth: 0 }        # the range diff needs the merge-base
+  - uses: Systemartis/readmedaddy@v0.2.0
+    with: { mode: comment }         # one sticky PR comment; 'fail' = required check
+```
+
+In `comment` mode it posts (and thereafter updates) a single PR comment naming the drifted files; in `fail` mode it fails the job and makes no API calls at all. This repo runs the same action on its own PRs. LLM-scored merge gates are deliberately not offered — judge scores wobble between passes, so scoring stays advisory.
 
 ## Usage and triggers
 
@@ -278,8 +331,9 @@ The bar is conjunctive and per-fixture: **4/4** correct archetype detection, at 
 | [`references/generation-and-ranking.md`](skills/readmedaddy/references/generation-and-ranking.md) | the generate→rank workflow and the tournament |
 | [`references/famous-readme-patterns.md`](skills/readmedaddy/references/famous-readme-patterns.md) | the README canon and exemplars by archetype |
 | [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md) | the auto-update hook: drift logic, modes, config, loop safety |
-| [`hooks/readme-drift.sh`](skills/readmedaddy/hooks/readme-drift.sh) | the Stop hook that flags a README drifting behind its code |
-| [`scripts/install-hook.py`](scripts/install-hook.py) | idempotent installer that wires the Stop hook into `settings.json` |
+| [`hooks/readme-drift.sh`](skills/readmedaddy/hooks/readme-drift.sh) | the drift detector: Claude Code Stop hook + standalone `--check` mode for CI, git hooks, and other agents |
+| [`action.yml`](action.yml) | composite GitHub Action: comment on or fail a PR that leaves the README behind |
+| [`scripts/install-hook.py`](scripts/install-hook.py) | idempotent installer that wires the Stop hook into `settings.json` (atomic writes) |
 | [`assets/badges.md`](skills/readmedaddy/assets/badges.md) | copy-paste badge recipes, with the rule for what's allowed |
 | [`eval/`](skills/readmedaddy/eval/) | fixtures, the blind judge, `score.py`, the pre-registration |
 | [`examples/`](examples/) | worked before/after upgrades (CLI, library) |

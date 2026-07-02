@@ -268,6 +268,38 @@ elif "auto-update-hook.md" not in read(SKILL_MD):
 else:
     note("hook: SKILL.md reaches references/auto-update-hook.md")
 
+# 9. No-network guard (local-only invariant) ---------------------------------
+# readmedaddy's corporate-safety contract: nothing shipped ever talks to the
+# network. Every executable in the repo must stay pure local git/file work, so
+# CI fails if a network primitive appears in any .sh or .py file. This file is
+# excluded (the pattern list below would match itself).
+NET_PRIMITIVES = [
+    r"\bcurl\b", r"\bwget\b", r"/dev/tcp", r"\bnc\b", r"\bopenssl\s+s_client\b",
+    r"\burllib\b", r"\brequests\.", r"\bhttpx\b", r"\baiohttp\b",
+    r"\bsocket\b", r"http\.client", r"\burlopen\b", r"\bftplib\b",
+    r"\bsmtplib\b", r"\btelnetlib\b",
+]
+net_scanned = 0
+for dirpath, dirnames, filenames in os.walk(ROOT):
+    if ".git" in dirpath:
+        continue
+    for fn in filenames:
+        if not fn.endswith((".sh", ".py")):
+            continue
+        p = os.path.join(dirpath, fn)
+        if os.path.abspath(p) == self_path:
+            continue
+        net_scanned += 1
+        try:
+            code = read(p)
+        except (UnicodeDecodeError, OSError):
+            warn(f"{os.path.relpath(p, ROOT)}: unreadable, skipped no-network scan")
+            continue
+        for pat in NET_PRIMITIVES:
+            if re.search(pat, code):
+                err(f"{os.path.relpath(p, ROOT)}: network primitive '{pat}' (local-only invariant)")
+note(f"no-network guard: {net_scanned} executable file(s) clean")
+
 # Report ---------------------------------------------------------------------
 for n in notes:
     print(f"  ok    {n}")

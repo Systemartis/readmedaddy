@@ -18,12 +18,22 @@ What the skill does **not** do:
 
 - no network calls — it does not fetch from the internet, phone home, or pull
   remote templates; the famous-README patterns it draws on are baked into the
-  reference files
+  reference files. This is **enforced, not just stated**: a no-network guard in
+  `scripts/validate-skill.py` fails CI if a network primitive (`curl`, `wget`,
+  `urllib`, `socket`, `requests.`, `/dev/tcp`, …) appears in any shipped `.sh`
+  or `.py` file, and SKILL.md explicitly instructs the model to operate offline
+  — an instruction that travels with the skill into every agent that loads it
+  (Claude Code, opencode, Copilot, or anything reading `AGENTS.md`)
 - no execution of repository code, build steps, install steps, or test suites
 - no writes outside the README it is asked to produce (it does not modify source,
   delete files, or rewrite history)
 - no new tool, filesystem, or permission grants — it composes with the host
   harness and yields to it
+
+One boundary readmedaddy cannot police: the host agent's own model traffic.
+Repo context goes wherever your agent sends it, for readmedaddy exactly as for
+any other task in that agent. With a locally-hosted model the entire loop stays
+on-device.
 
 If a future change would have the skill fetch over the network, execute repo
 code, or write anywhere other than the README, that is a security-relevant change
@@ -43,6 +53,11 @@ Two executable files ship with the repo.
 
 Neither script is part of the README-generation path; the skill body that
 produces READMEs is Markdown instructions interpreted by the model.
+
+The optional CI action (`action.yml`) runs in your own GitHub Actions: it
+diffs your branch locally, fetches only your own base ref, and — in `comment`
+mode — posts one comment on your own pull request with your `GITHUB_TOKEN`.
+In `fail` mode it makes no API calls. No third-party endpoint is contacted.
 
 ## Supply-chain note: review install.sh before running
 

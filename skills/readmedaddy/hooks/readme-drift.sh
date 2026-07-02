@@ -1,10 +1,22 @@
 #!/bin/sh
-# readmedaddy readme-drift: Claude Code Stop hook.
-# Detects when README-relevant files changed but the README did not, and
-# prompts an in-session refresh through the readmedaddy skill. It never edits
-# files itself and never breaks a session: it exits 0 on any error.
+# readmedaddy readme-drift: README-vs-code drift detector.
 #
-# POSIX sh. shellcheck-clean. No bashisms.
+# Two modes, one drift logic:
+#   (default)          Claude Code Stop hook — reads the Stop event on stdin
+#                      and prompts an in-session refresh through the skill.
+#                      Never edits files, never breaks a session: exits 0 on
+#                      any error.
+#   --check [--range R] Standalone, agent-agnostic check for CI, git hooks,
+#                      or any other harness. No stdin, no cooldown state.
+#                      Exit 0 = fresh, 1 = drift (drifted files on stdout),
+#                      2 = usage/git error. Working tree by default; with
+#                      --range (e.g. origin/main...HEAD) compares commits.
+#                      Respects .readmedaddy.json enabled:false; ignores the
+#                      session-scoped README_DADDY_HOOK env switch.
+#
+# Everything here is local git + POSIX sh: no network, no telemetry, and no
+# writes outside .readmedaddy/state (hook-mode cooldown only).
+# POSIX sh, shellcheck-clean. No bashisms.
 
 # Default set of README-relevant signal paths (baked in; overridable via
 # .readmedaddy.json "watch"). Newline-separated.
@@ -28,17 +40,43 @@ Dockerfile
 docker-compose.yml
 **/SKILL.md'
 
-# (a) Read all of stdin.
-stdin_data=$(cat 2>/dev/null)
-
-# (b) Loop guard: never continue an already-continued Stop.
-if printf '%s' "$stdin_data" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true'; then
-	exit 0
+# Argument parsing (before stdin: --check mode reads nothing).
+CHECK_MODE=0
+RANGE=
+RANGE_SET=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--check) CHECK_MODE=1 ;;
+	--range)
+		shift
+		RANGE=${1:-}
+		RANGE_SET=1
+		;;
+	--range=*)
+		RANGE=${1#--range=}
+		RANGE_SET=1
+		;;
+	esac
+	[ $# -gt 0 ] && shift
+done
+if [ "$CHECK_MODE" = 1 ] && [ "$RANGE_SET" = 1 ] && [ -z "$RANGE" ]; then
+	printf 'readmedaddy --check: --range requires a value (e.g. origin/main...HEAD)\n' >&2
+	exit 2
 fi
 
-# (c) Global off switch.
-if [ "${README_DADDY_HOOK:-}" = off ]; then
-	exit 0
+if [ "$CHECK_MODE" = 0 ]; then
+	# (a) Read all of stdin.
+	stdin_data=$(cat 2>/dev/null)
+
+	# (b) Loop guard: never continue an already-continued Stop.
+	if printf '%s' "$stdin_data" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true'; then
+		exit 0
+	fi
+
+	# (c) Global off switch (session-scoped; deliberately not honored by --check).
+	if [ "${README_DADDY_HOOK:-}" = off ]; then
+		exit 0
+	fi
 fi
 
 # (d) Resolve repo root from the hook's CWD.
@@ -180,6 +218,37 @@ committed_drift() {
 	return 0
 }
 
+# Standalone range check (--check --range A...B): compare commits, not the
+# working tree. Loud on errors — a misconfigured CI gate should fail visibly.
+if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
+	if ! range_changed=$(git -C "$root" diff --name-only "$RANGE" 2>/dev/null); then
+		printf 'readmedaddy --check: cannot resolve range: %s\n' "$RANGE" >&2
+		exit 2
+	fi
+	# README updated inside the range -> fresh, regardless of what else moved.
+	if printf '%s\n' "$range_changed" | grep -qxF "$readme_path"; then
+		exit 0
+	fi
+	range_drifted=
+	while IFS= read -r rc_path; do
+		if [ -z "$rc_path" ]; then
+			continue
+		fi
+		if match_watch "$rc_path"; then
+			range_drifted=$(printf '%s\n%s' "$range_drifted" "$rc_path")
+		fi
+	done <<EOF
+$range_changed
+EOF
+	range_drifted=$(printf '%s' "$range_drifted" | grep -v '^$' | sort -u)
+	if [ -z "$range_drifted" ]; then
+		exit 0
+	fi
+	printf '%s\n' "$range_drifted"
+	printf 'readmedaddy: these README-relevant files changed in %s but %s did not\n' "$RANGE" "$readme_path" >&2
+	exit 1
+fi
+
 # (g) Compute working-tree drift.
 readme_dirty=0
 dirty_watched=
@@ -221,6 +290,14 @@ fi
 
 if [ -z "$signal_files" ]; then
 	exit 0
+fi
+
+# Standalone working-tree check: report and exit before any cooldown state —
+# a checker must be idempotent and write nothing.
+if [ "$CHECK_MODE" = 1 ]; then
+	printf '%s\n' "$signal_files" | sort -u
+	printf 'readmedaddy: these README-relevant files changed but %s did not\n' "$readme_path" >&2
+	exit 1
 fi
 
 # (h) Cooldown: signature of the current drift.

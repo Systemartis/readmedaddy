@@ -11,6 +11,12 @@ It is deliberately quiet. No git repo, no README, or a config that turns it off,
 and it does nothing. It never rewrites files on its own and it can never break a
 session — every path exits clean.
 
+The Stop hook is the Claude Code face of the detector; the **same script runs
+standalone** with `--check` for CI, git hooks, and every other agent — one
+drift logic, one config, every surface. See
+[Standalone `--check` mode](#standalone---check-mode-any-agent-ci-git-hooks).
+Everything in this file is local git + POSIX sh: no network, no telemetry.
+
 - Hook script: [`../hooks/readme-drift.sh`](../hooks/readme-drift.sh)
 - Installer: `scripts/install-hook.py` in the
   [readmedaddy repo](https://github.com/Systemartis/readmedaddy) (not shipped
@@ -135,6 +141,43 @@ Example:
   }
 }
 ```
+
+## Standalone `--check` mode: any agent, CI, git hooks
+
+The same drift logic runs without any agent — pure local git and POSIX sh:
+
+```sh
+readme-drift.sh --check                             # working tree (+ last-commit fallback)
+readme-drift.sh --check --range origin/main...HEAD  # commit range, for CI
+```
+
+| Exit | Meaning |
+|------|---------|
+| `0` | fresh — or nothing to check (no git repo, no README, `enabled: false`) |
+| `1` | drift — the drifted watched files print to stdout, one per line |
+| `2` | usage or git error (bad `--range`) — loud on purpose, so a misconfigured CI gate fails visibly |
+
+Semantics that differ from Stop-hook mode, deliberately:
+
+- **Idempotent and stateless.** `--check` reads no stdin and writes no cooldown
+  state — run it twice, get the same answer twice.
+- **Ignores `README_DADDY_HOOK`.** That env var is a session-scoped switch for
+  the Stop hook; an explicit `--check` invocation should always answer.
+- **Respects `.readmedaddy.json`.** `enabled: false`, a custom `readme`, and a
+  custom `watch` list apply to every surface, so a project configures drift
+  once.
+
+**Git pre-commit warning** (universal — no agent, warns without blocking):
+
+```sh
+# .git/hooks/pre-commit
+~/.claude/skills/readmedaddy/hooks/readme-drift.sh --check || echo "readmedaddy: consider refreshing the README"
+```
+
+**Pull-request gate.** The repo ships a composite GitHub Action (`action.yml`
+at the repo root) that runs `--check --range` against the PR's base and either
+posts one sticky comment (`mode: comment`) or fails the job (`mode: fail`).
+Requires `actions/checkout` with `fetch-depth: 0` so the merge-base exists.
 
 ## Install
 

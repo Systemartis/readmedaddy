@@ -56,3 +56,19 @@ jobs:
         run: npx --yes markdownlint-cli2 "**/*.md" "#node_modules"
         # The clean-for-publish (forbidden-reference) guard is owned by
         # scripts/validate-skill.py in the `validate` job — single source.
+
+  # Dogfood: this repo's own README is held to the drift gate it ships.
+  drift:
+    name: readme drift (dogfood of ./action.yml)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./
+        with:
+          mode: comment

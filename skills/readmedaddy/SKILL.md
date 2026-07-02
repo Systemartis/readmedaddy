@@ -11,7 +11,7 @@ description: >-
   facts about the code.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # readmedaddy
@@ -135,6 +135,12 @@ safety policy; an explicit live user instruction; standing project docs
 defaults. If the project mandates a README structure, follow it and apply the gates
 *within* it. Never invent facts, results, badges, or links the repo doesn't support —
 an honest thin README beats an impressive fictional one.
+
+**Operate offline.** Every fact comes from the local repository; never fetch
+anything over the network to write a README — no web searches, no remote
+templates, no URL lookups. The repo in front of you is the entire input. (The
+patterns this skill draws on are baked into its reference files for exactly
+this reason.)
 
 ## Keep it fresh (auto-update hook)
 
