@@ -1,0 +1,4 @@
+# Default owner for everything in the repo: review is auto-requested on every
+# pull request, and the main-branch ruleset requires code-owner approval for
+# changes not made by a repo admin.
+* @maximmaicovschi
