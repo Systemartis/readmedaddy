@@ -56,9 +56,19 @@ while [ $# -gt 0 ]; do
 		RANGE=${1#--range=}
 		RANGE_SET=1
 		;;
+	*)
+		# A typo'd flag must never pass silently green (e.g. --chekc falling
+		# through to hook mode and exiting 0 in a CI gate). Loud, always.
+		printf 'readmedaddy: unknown argument: %s (supported: --check [--range A...B])\n' "$1" >&2
+		exit 2
+		;;
 	esac
 	[ $# -gt 0 ] && shift
 done
+if [ "$RANGE_SET" = 1 ] && [ "$CHECK_MODE" = 0 ]; then
+	printf 'readmedaddy: --range only makes sense with --check\n' >&2
+	exit 2
+fi
 if [ "$CHECK_MODE" = 1 ] && [ "$RANGE_SET" = 1 ] && [ -z "$RANGE" ]; then
 	printf 'readmedaddy --check: --range requires a value (e.g. origin/main...HEAD)\n' >&2
 	exit 2
@@ -179,11 +189,16 @@ match_watch() {
 			esac
 			;;
 		*)
-			if [ "$mw_path" = "$mw_pat" ]; then
+			# Exact match or plain glob (docs/*.md). `case` gives fnmatch
+			# semantics even under set -f; * crosses / here, documented.
+			# shellcheck disable=SC2254  # unquoted on purpose: glob match
+			case "$mw_path" in
+			$mw_pat)
 				IFS=$mw_old
 				set +f
 				return 0
-			fi
+				;;
+			esac
 			;;
 		esac
 	done
@@ -258,19 +273,31 @@ while IFS= read -r pline; do
 		continue
 	fi
 	ppath=$(printf '%s' "$pline" | cut -c4-)
+	# A rename lists 'old -> new'; both sides matter — a file renamed OUT of
+	# a watched path is drift too (the watched entrypoint vanished).
+	ppaths=$ppath
 	case "$ppath" in
-	*' -> '*) ppath=${ppath##* -> } ;;
+	*' -> '*)
+		ppaths=$(printf '%s\n%s' "${ppath##* -> }" "${ppath%% -> *}")
+		;;
 	esac
-	case "$ppath" in
-	'"'*'"') ppath=$(printf '%s' "$ppath" | sed 's/^"//; s/"$//') ;;
-	esac
-	if [ "$ppath" = "$readme_path" ]; then
-		readme_dirty=1
-		continue
-	fi
-	if match_watch "$ppath"; then
-		dirty_watched=$(printf '%s\n%s' "$dirty_watched" "$ppath")
-	fi
+	p_old=$IFS
+	IFS='
+'
+	for pp in $ppaths; do
+		IFS=$p_old
+		case "$pp" in
+		'"'*'"') pp=$(printf '%s' "$pp" | sed 's/^"//; s/"$//') ;;
+		esac
+		if [ "$pp" = "$readme_path" ]; then
+			readme_dirty=1
+		elif match_watch "$pp"; then
+			dirty_watched=$(printf '%s\n%s' "$dirty_watched" "$pp")
+		fi
+		IFS='
+'
+	done
+	IFS=$p_old
 done <<EOF
 $porcelain
 EOF
@@ -307,15 +334,20 @@ if [ -z "$head_sha" ]; then
 fi
 files_sig=$(printf '%s' "$signal_files" | sort -u | tr '\n' ',')
 signature="$head_sha|$files_sig"
-state_dir=$root/.readmedaddy
-state_file=$state_dir/state
+# Cooldown state lives INSIDE .git/ so the hook never litters the target
+# repo's working tree with an untracked directory.
+git_dir=$(git -C "$root" rev-parse --git-dir 2>/dev/null)
+case "$git_dir" in
+"") exit 0 ;;
+/*) state_file=$git_dir/readmedaddy-state ;;
+*) state_file=$root/$git_dir/readmedaddy-state ;;
+esac
 stored=$(cat "$state_file" 2>/dev/null)
 if [ "$stored" = "$signature" ]; then
 	exit 0
 fi
 
 record_state() {
-	mkdir -p "$state_dir" 2>/dev/null || return 0
 	printf '%s\n' "$signature" >"$state_file" 2>/dev/null || return 0
 	return 0
 }

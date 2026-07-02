@@ -79,6 +79,9 @@ runs:
         FILES: ${{ steps.check.outputs.files }}
       run: |
         set -eu
+        # Filenames are branch-controlled: strip backticks so a crafted name
+        # cannot break out of the fenced block in the comment body.
+        FILES=${FILES//\`/}
         body="<!-- readmedaddy-drift -->
         ### readmedaddy: this PR may leave the README behind
 
@@ -94,12 +97,28 @@ runs:
           echo "::error::README drift — README-relevant files changed but the README did not."
           exit 1
         fi
+        {
+          echo "### readmedaddy drift"
+          echo '```'
+          echo "$FILES"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
         # Sticky comment: update the existing marker comment or create one.
+        # On fork PRs GITHUB_TOKEN is read-only regardless of `permissions:`,
+        # so comment mode must degrade to a warning instead of failing the
+        # advisory gate for exactly the outside contributors it targets.
+        set +e
         existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-          --jq '[.[] | select(.body | startswith("<!-- readmedaddy-drift -->"))][0].id' 2>/dev/null || true)
+          --jq '[.[] | select(.body | startswith("<!-- readmedaddy-drift -->"))][0].id' 2>/dev/null)
         if [ -n "$existing" ] && [ "$existing" != null ]; then
-          gh api -X PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null 2>&1
         else
-          gh api "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+          gh api "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null 2>&1
         fi
-        echo "Posted drift comment on PR #$PR."
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "::warning::README drift detected, but the token cannot comment (fork PR?). Drifted files are in the step summary above."
+        else
+          echo "Posted drift comment on PR #$PR."
+        fi

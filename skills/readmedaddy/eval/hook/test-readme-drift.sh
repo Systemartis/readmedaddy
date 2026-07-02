@@ -158,10 +158,22 @@ printf '{"name":"x","v":2}\n' >"$d/package.json"
 (cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
 out=$( (cd "$d" && sh "$HOOK" --check) )
 rc=$?
-if [ "$rc" = 1 ] && [ ! -e "$d/.readmedaddy/state" ]; then
+if [ "$rc" = 1 ] && [ ! -e "$d/.readmedaddy" ]; then
 	note ok "CHECK is idempotent and writes no cooldown state"
 else
-	note fail "CHECK second run expected rc=1 and no state file (rc=$rc)"
+	note fail "CHECK second run expected rc=1 and no state dir (rc=$rc)"
+fi
+
+# (i2) HOOK mode keeps the working tree clean: cooldown state lives inside
+# .git/, never as a new untracked directory in the target repo.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+run_hook "$d" "$STDIN_CONT_FALSE" >/dev/null
+extra=$(git -C "$d" status --porcelain | grep -cv 'package.json')
+if [ "$extra" = 0 ] && [ -f "$d/.git/readmedaddy-state" ]; then
+	note ok "HOOK cooldown state lives inside .git/, tree stays clean"
+else
+	note fail "HOOK state should be .git/readmedaddy-state, no untracked litter (extra=$extra)"
 fi
 
 # (j) CHECK-RANGE drift: commit changes package.json only -> exit 1 over range.
@@ -211,6 +223,46 @@ if [ "$rc" = 2 ]; then
 	note ok "CHECK bad range exits 2"
 else
 	note fail "CHECK bad range expected rc=2 (rc=$rc)"
+fi
+
+# (n) Plain glob watch patterns (docs/*.md) match in --check mode.
+d=$(setup_repo)
+mkdir -p "$d/docs"
+printf 'guide\n' >"$d/docs/guide.md"
+git -C "$d" add -A && git -C "$d" commit -qm docs
+printf '{"hook":{"watch":["docs/*.md"]}}\n' >"$d/.readmedaddy.json"
+printf 'guide v2\n' >"$d/docs/guide.md"
+out=$( (cd "$d" && sh "$HOOK" --check 2>/dev/null) )
+rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'docs/guide.md'; then
+	note ok "CHECK matches plain glob watch patterns"
+else
+	note fail "CHECK glob docs/*.md expected rc=1 naming the file (rc=$rc, out: $out)"
+fi
+
+# (o) Unknown arguments exit 2 loudly — a typo'd --check must never pass green.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && sh "$HOOK" --chekc </dev/null 2>/dev/null) )
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "unknown argument exits 2"
+else
+	note fail "unknown argument expected rc=2 (rc=$rc, out: $out)"
+fi
+
+# (p) A staged rename OUT of a watched path is drift (the entrypoint vanished).
+d=$(setup_repo)
+mkdir -p "$d/src"
+printf 'main\n' >"$d/src/main.js"
+git -C "$d" add -A && git -C "$d" commit -qm src
+git -C "$d" mv src/main.js retired.js
+out=$( (cd "$d" && sh "$HOOK" --check 2>/dev/null) )
+rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'src/main.js'; then
+	note ok "CHECK catches rename out of a watched path"
+else
+	note fail "CHECK rename expected rc=1 naming src/main.js (rc=$rc, out: $out)"
 fi
 
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"

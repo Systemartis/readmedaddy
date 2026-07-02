@@ -4,6 +4,42 @@ All notable changes to readmedaddy are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-02
+
+Fixes from an adversarial deep-dive review (every finding below was confirmed
+by execution before being fixed; the behavior changes shipped tests-first).
+
+### Fixed
+
+- **`install.sh` executable bit restored** — the README quickstart failed with
+  `permission denied` on a fresh clone. CI now asserts the exec bits so this
+  cannot regress.
+- **Guard blind spot under `.github/`**: the clean-for-publish and no-network
+  scans skipped `.github/` because a substring test conflated it with `.git/`.
+  Both walks now test path components; the directory where CI code lives is
+  scanned.
+- **Plain glob watch patterns** (`docs/*.md`) now match in `--check`,
+  `--range`, and working-tree modes — previously they matched only in the
+  committed-drift fallback, so the CI Action could miss drift the local hook
+  reported.
+- **Unknown arguments exit 2** — a typo'd `--check` no longer falls through to
+  hook mode and passes a CI gate permanently green.
+- **Renames out of watched paths are drift** — `git mv src/main.js retired.js`
+  now flags `src/main.js` instead of being missed.
+- **Cooldown state moved inside `.git/`** (`.git/readmedaddy-state`) — the hook
+  no longer litters target repos with an untracked `.readmedaddy/` directory.
+- **Action comment mode degrades gracefully on fork PRs** (read-only token):
+  warning + step summary instead of a red advisory check; drifted filenames are
+  sanitized against markdown fence injection.
+- **`install.sh` no longer ships `eval/`** into agents' skills dirs — the
+  fixtures include a decoy SKILL.md an agent could mis-load.
+- Docs: SECURITY.md rewritten around the real threat surface (the hook and the
+  settings installer) and versions table bumped; README's quoted trigger
+  description synced with SKILL.md; SKILL.md's weight pointer corrected;
+  rubric's rounding formula matched to `score.py` (one decimal); config-parsing
+  and quoted-path ceilings documented; CONTRIBUTING structure refreshed;
+  manual uninstall path documented.
+
 ## [0.2.0] - 2026-07-02
 
 Every agent, one detector, and a machine-enforced local-only guarantee.

@@ -11,7 +11,7 @@ description: >-
   facts about the code.
 license: MIT
 metadata:
-  version: 0.2.0
+  version: 0.2.1
 ---
 
 # readmedaddy
@@ -65,7 +65,8 @@ check the manifest and entrypoints (`package.json` bin vs main/exports, `pyproje
 
 State the detected archetype in one line and proceed. If genuinely ambiguous or the
 user contradicts you, ask once; otherwise assume and note it. Load the archetype's
-profile from `references/archetypes.md` for its section menu and gate weighting.
+profile from `references/archetypes.md` for its section menu; the gate weights
+live in `references/multi-gate-rubric.md`.
 
 ## Then: generate → multi-gate-rank → iterate
 

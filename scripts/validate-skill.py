@@ -162,7 +162,10 @@ FORBIDDEN = [base64.b64decode(t).decode() for t in _FORBIDDEN_B64]
 self_path = os.path.abspath(__file__)
 scan = []
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    if ".git" in dirpath:
+    # Path-component test, NOT substring: ".git" in "/.github/workflows" is
+    # true, and skipping .github/ would blind both guards to the exact
+    # directory where CI code lives.
+    if ".git" in dirpath.split(os.sep):
         continue
     for fn in filenames:
         if fn.endswith((".md", ".sh", ".py", ".yml", ".yaml")):
@@ -281,7 +284,10 @@ NET_PRIMITIVES = [
 ]
 net_scanned = 0
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    if ".git" in dirpath:
+    # Path-component test, NOT substring: ".git" in "/.github/workflows" is
+    # true, and skipping .github/ would blind both guards to the exact
+    # directory where CI code lives.
+    if ".git" in dirpath.split(os.sep):
         continue
     for fn in filenames:
         if not fn.endswith((".sh", ".py")):

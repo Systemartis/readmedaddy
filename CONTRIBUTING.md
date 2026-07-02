@@ -21,10 +21,15 @@ skills/readmedaddy/
   assets/
     ascii-banner.txt             # the ASCII wordmark
     badges.md                    # reusable badge snippets
-  eval/                          # fixtures + RED→GREEN harness
+    auto-update-hook.md          # the readme-drift hook: modes, config, --check
+  hooks/
+    readme-drift.sh              # drift detector: Stop hook + standalone --check
+  eval/                          # fixtures + RED→GREEN harness + hook tests + results
 scripts/
-  validate-skill.py              # structure + frontmatter + clean-for-publish validator (CI)
-.github/workflows/ci.yml         # validate + shellcheck + markdownlint
+  validate-skill.py              # structure + clean-for-publish + no-network validator (CI)
+  install-hook.py                # idempotent Stop-hook installer (atomic settings writes)
+action.yml                       # composite GitHub Action: PR drift gate
+.github/workflows/ci.yml         # validate + shell + python + markdownlint + drift (PRs)
 CHANGELOG.md  README.md  LICENSE  CONTRIBUTING.md  SECURITY.md  CODE_OF_CONDUCT.md
 install.sh  .markdownlint-cli2.jsonc
 ```

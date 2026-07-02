@@ -32,6 +32,10 @@ jobs:
           sh -n install.sh
           sh -n skills/readmedaddy/hooks/readme-drift.sh
           sh -n skills/readmedaddy/eval/hook/test-readme-drift.sh
+      - name: executable bits survive (the README quickstart depends on them)
+        run: |
+          test -x install.sh
+          test -x skills/readmedaddy/hooks/readme-drift.sh
       - name: hook behavior test
         run: sh skills/readmedaddy/eval/hook/test-readme-drift.sh
 

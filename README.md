@@ -15,7 +15,7 @@
 
 [![ci](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.2.1-blue.svg)](CHANGELOG.md)
 [![Agent Skill](https://img.shields.io/badge/Claude%20Code-Agent%20Skill-8A2BE2.svg)](https://agentskills.io)
 
 **A [Claude Code](https://claude.ai/code) [Agent Skill](https://agentskills.io) that writes the README your repo deserves — and earns its score instead of asserting it.**
@@ -216,7 +216,7 @@ Everything readmedaddy ships runs on your machine — stated here, and enforced 
 - **No network, ever, in shipped code.** The skill is Markdown; the hook, installer, and validator are POSIX shell and stdlib Python doing local git and file reads. A **no-network guard** in [`scripts/validate-skill.py`](scripts/validate-skill.py) fails the build if any network primitive (`curl`, `wget`, `urllib`, `socket`, `requests.`, `/dev/tcp`, …) appears in any shipped `.sh` or `.py` file.
 - **The skill orders the model to stay offline.** [`SKILL.md`](skills/readmedaddy/SKILL.md)'s contract: every fact comes from the local repository — no web searches, no remote templates, no URL lookups. The README canon it draws on is baked into the reference files so nothing needs fetching.
 - **No telemetry, no phone-home, no accounts.** Nothing is collected, counted, or reported anywhere. There is no server side.
-- **Bounded, atomic writes.** The skill writes one file (your README). The hook writes one cooldown file (`.readmedaddy/state`). The installer writes the skill folders and — Claude Code only — merges your `settings.json` via temp-file-plus-rename, so an interrupted write can't corrupt it.
+- **Bounded, atomic writes.** The skill writes one file (your README). The hook writes one cooldown file inside `.git/` (`.git/readmedaddy-state` — never an untracked file in your working tree). The installer writes the skill folders and — Claude Code only — merges your `settings.json` via temp-file-plus-rename, so an interrupted write can't corrupt it.
 - **Small enough to audit.** One shell hook, one installer, one validator — read them before running; there are no dependencies, no build step, and no postinstall hooks to hide in.
 - **What's outside readmedaddy's control:** your agent's own model traffic. Run Claude Code or Copilot against a cloud model and your repo context goes wherever your agent sends it — for readmedaddy exactly as for every other task in that agent. Pair the skill with a locally-hosted model and the entire loop is airgap-friendly.
 - **The optional CI action** ([`action.yml`](action.yml)) runs in *your* CI against *your* repo: it fetches your own base branch and, in `comment` mode, posts one comment on your own PR using your `GITHUB_TOKEN`. In `fail` mode it makes no API calls at all. No third-party endpoint is ever contacted.
@@ -279,7 +279,7 @@ Once installed, point Claude Code at any repository and ask for a README, or let
 
 The skill triggers on its frontmatter `description`, which states the symptoms, not the workflow:
 
-> Use when writing or improving a README — the README is thin, stub, outdated, a wall of text, unscannable, or missing; a new or empty repo needs a front page or landing doc; the existing README has no quickstart, no install, no badges, no examples, broken or stale instructions, or reads like AI slop; someone says "write me a README", "make this README better", "the readme sucks", "polish the readme", "good first impression", "readme.md", "project front page", "documentation landing". Works for any repo: CLI, library/package, framework, app/SaaS, infra, data/ML, Claude Code skill or agent tool, research, or monorepo. Yields to user and project instructions; never invents facts about the code.
+> Use when writing or improving a README — thin, stub, outdated, a wall of text, unscannable, or missing; a new repo needs a front page; no quickstart, install, badges, or examples; broken instructions or AI slop. Triggers include "write me a README", "make this README better", "the readme sucks", "polish the readme", "readme.md", "project front page", "documentation landing". Works for any repo: CLI, library, framework, app/SaaS, infra, data/ML, agent skill, research, monorepo, internal tool. Yields to user and project instructions; never invents facts about the code.
 
 You get a complete `README.md`, fit to the repo's detected archetype, with every factual claim — install commands, file paths, version, license, code blocks — checked against the repo. After the README, readmedaddy offers the strong runner-up elements as labelled alternatives ("shorter hook from the minimal draft", "alternate banner from the diagram-led draft") so you can swap a section without re-running anything.
 

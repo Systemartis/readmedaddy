@@ -119,7 +119,7 @@ copy-paste starting point.
 | `hook.enabled` | boolean | `true` | `false` turns the hook off for this repo. |
 | `hook.mode` | string | `"auto"` | `"auto"`, `"notify"`, or `"enforce"`. |
 | `hook.readme` | string | `"README.md"` | Path to the README the hook watches. |
-| `hook.watch` | string[] | the default list above | Glob/prefix patterns of files whose changes imply README drift. |
+| `hook.watch` | string[] | the default list above | Patterns of files whose changes imply README drift: exact paths, `dir/**` (prefix), `**/name` (suffix), or plain globs like `docs/*.md` (fnmatch semantics — `*` also crosses `/`). |
 
 Example:
 
@@ -141,6 +141,12 @@ Example:
   }
 }
 ```
+
+One parsing caveat (deliberately simple, no JSON parser in POSIX sh): the hook
+reads the **last** occurrence of each key anywhere in the file — including
+inside string values. Keep the real `hook` object *after* any documentation
+strings (as the shipped example does), and don't put text like `"enabled":
+false` inside a doc string below it.
 
 ## Standalone `--check` mode: any agent, CI, git hooks
 
@@ -222,6 +228,10 @@ python3 scripts/install-hook.py --uninstall            # user-global scope
 python3 scripts/install-hook.py --uninstall --project  # project scope
 ```
 
+Deleted the cloned repo already? The manual equivalent: open
+`~/.claude/settings.json` and remove the `hooks.Stop` entry whose command ends
+in `readme-drift.sh`, then delete the installed skill folder(s).
+
 It removes only the matching readme-drift entry and leaves the rest of your
 settings untouched.
 
@@ -233,17 +243,22 @@ again, which prompts again. Two guards prevent that:
 - **`stop_hook_active`:** when Claude Code re-runs the Stop hook as part of a
   hook-driven continuation, it sets `stop_hook_active: true` on stdin. The hook sees
   that and exits immediately, so it never fires twice within the same turn.
-- **`.readmedaddy/state` cooldown:** the hook writes a signature of the drift it
-  just handled — the short HEAD sha plus the sorted set of dirty watched files. On
-  the next Stop, an identical signature means "same drift, already nagged," and it
-  exits. A new signature (you changed different files, or committed) is what lets it
-  fire again. (`enforce` mode intentionally skips recording, so it re-prompts until
-  the README moves.)
+- **Cooldown state:** the hook writes a signature of the drift it just handled —
+  the short HEAD sha plus the sorted set of dirty watched files — to
+  `.git/readmedaddy-state`. On the next Stop, an identical signature means "same
+  drift, already nagged," and it exits. A new signature (you changed different
+  files, or committed) is what lets it fire again. (`enforce` mode intentionally
+  skips recording, so it re-prompts until the README moves.)
 
-The `.readmedaddy/` state directory is local and gitignored — it is per-clone
-bookkeeping, not project content.
+The state file lives *inside* `.git/`, so it is per-clone bookkeeping by
+construction — it can never appear as an untracked file in your working tree
+and never needs a gitignore entry. `--check` mode writes no state at all.
 
 ## Honesty note
+
+Known ceiling: paths that git quotes in porcelain output (non-ASCII or special
+characters) are compared in their quoted form, so a README at such a path may
+be mis-detected. ASCII paths — the overwhelming case — are exact.
 
 This hook **detects drift and prompts an in-session refresh through the readmedaddy
 skill.** That is the whole contract. It does **not** edit your README, does not run

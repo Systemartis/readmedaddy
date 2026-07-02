@@ -157,6 +157,8 @@ def rows_from_json(text):
 def load(path):
     with open(path, encoding="utf-8") as f:
         text = f.read()
+    if not text.strip():
+        return []
     if path.endswith(".json"):
         return rows_from_json(text)
     if path.endswith(".tsv"):

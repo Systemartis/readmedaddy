@@ -41,15 +41,28 @@ and must be called out in review.
 
 ## Script threat surface
 
-Two executable files ship with the repo.
+The executables that ship with the repo, ordered by how much trust they run with:
 
-- **`scripts/validate-skill.py`** is a developer and CI tool. It walks the repo,
-  reads Markdown and config files, runs the validations, and prints a report. It
-  is standard-library only, makes no network calls, and writes nothing — it only
-  reads and reports. It runs in CI, not as part of generating a README.
-- **`install.sh`** copies the skill into your Claude Code skills directory. It is
-  plain POSIX shell with no remote fetch step, shellcheck-clean, and syntax-checked
-  in CI.
+- **`skills/readmedaddy/hooks/readme-drift.sh`** is the highest-value surface:
+  once registered it runs automatically on every Claude Code Stop, in whatever
+  repo you are working in, parsing repo-controlled input (`.readmedaddy.json`,
+  git filenames). It is POSIX shell over local git only, passes pathspecs after
+  `--`, exits 0 on every hook-mode error path, and writes exactly one file —
+  its cooldown state inside `.git/`. Its behavior (drift, modes, `--check`,
+  loop guards, malformed config) is covered by an executable test suite that
+  runs in CI.
+- **`scripts/install-hook.py`** rewrites your user-global (or project)
+  `settings.json` to register the Stop hook. It writes atomically (temp file +
+  rename), merges without touching unrelated keys or hooks, and ships a
+  self-test that CI runs.
+- **`install.sh`** copies the skill into the agents' skills directories. Plain
+  POSIX shell with no remote fetch step, shellcheck-clean and syntax-checked in
+  CI.
+- **`scripts/validate-skill.py`** is a developer and CI tool: reads, validates,
+  prints. Standard library only; writes nothing.
+- **`skills/readmedaddy/eval/score.py`** and the eval's test scripts run only
+  in CI or when you run the eval by hand; stdlib only, no writes outside their
+  own output.
 
 Neither script is part of the README-generation path; the skill body that
 produces READMEs is Markdown instructions interpreted by the model.
@@ -79,11 +92,14 @@ the maintainers privately and keeps the report out of public issues.
 
 In scope and treated as security issues: any way to make the skill perform a
 network call, execute repository code, or write outside the README it was asked
-to produce; and shell injection or arbitrary file write through `install.sh` or
-`scripts/validate-skill.py`. Out of scope: the model producing a low-quality or
-factually wrong README (that is a content/calibration bug — open a normal issue),
-and the behavior of the underlying model or host harness, which readmedaddy does
-not control.
+to produce; shell injection or out-of-bounds write through
+`hooks/readme-drift.sh` driven by hostile repo content (a crafted
+`.readmedaddy.json`, filenames, or git state); corruption of `settings.json`
+through `scripts/install-hook.py`; and shell injection or arbitrary file write
+through `install.sh`, `action.yml`, or `scripts/validate-skill.py`. Out of
+scope: the model producing a low-quality or factually wrong README (that is a
+content/calibration bug — open a normal issue), and the behavior of the
+underlying model or host harness, which readmedaddy does not control.
 
 When you report, include the input or repo shape that triggers it and the
 observed effect. For a boundary-crossing claim (network, code execution, or an
@@ -95,7 +111,8 @@ This is pre-1.0 software. Only the latest released minor receives security fixes
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.2.x   | Yes       |
+| 0.1.x   | No — upgrade to the latest 0.2.x |
 
 Security fixes ship in a new patch release of the supported minor. If you are
 pinned to an older commit, upgrade to the latest tag before reporting, in case

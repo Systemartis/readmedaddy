@@ -208,7 +208,7 @@ every row sums to 29.
 2. Take that archetype's row from the resolved-vectors table (or start every gate at base 2 and apply the +4 / +3 / +2 bumps yourself).
 3. Score each gate 0–5 against its anchors.
 4. Multiply per gate: `weighted_i = weight_i × score_i`.
-5. Sum and normalize: `total = round( Σ weighted_i / 145 × 100 )`. Equivalently `Σ weighted_i ÷ 1.45`, since the weights always sum to 29.
+5. Sum and normalize: `total = round( Σ weighted_i / 145 × 100, 1 )` — one decimal, matching `eval/score.py` exactly. Equivalently `Σ weighted_i ÷ 1.45`, since the weights always sum to 29.
 
 For the fix list, also compute each gate's **deficit**:
 `deficit_i = weight_i × (5 − score_i)`. The deficit is how many normalized

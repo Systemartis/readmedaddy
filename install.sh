@@ -43,13 +43,15 @@ install_to() {
   it_dest=$1/readmedaddy
   echo "Installing readmedaddy -> $it_dest"
   mkdir -p "$it_dest"
-  # Prefer rsync; fall back to cp. Exclude nothing — the skill is small.
+  # Prefer rsync; fall back to cp. eval/ stays behind: it is test harness, not
+  # skill, and its fixtures contain a decoy SKILL.md an agent could mis-load.
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a --delete "$SRC"/ "$it_dest"/
+    rsync -a --delete --exclude=/eval "$SRC"/ "$it_dest"/
   else
     rm -rf "$it_dest"
     mkdir -p "$it_dest"
     cp -R "$SRC"/ "$it_dest"/
+    rm -rf "$it_dest/eval"
   fi
 
   if [ ! -f "$it_dest/SKILL.md" ]; then
