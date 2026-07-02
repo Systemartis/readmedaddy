@@ -35,7 +35,9 @@ through a contextual multi-gate rubric.
   badge snippets (`assets/badges.md`) for the visual and identity gates.
 - **Eval fixtures and harness** (`skills/readmedaddy/eval/`) — sample repos per
   archetype with expected detection and gate outcomes, run RED→GREEN so behavior
-  is tested rather than asserted.
+  is tested rather than asserted. First run (2026-07-02) passed every
+  pre-registered threshold: 4/4 detection, mean lift +65.7, all fixtures above
+  the 70/100 floor — full report in `eval/results/2026-07-02/`.
 - **CI** (`.github/workflows/ci.yml`) + `scripts/validate-skill.py`:
   frontmatter and budget checks, relative-link and backtick reference-pointer
   integrity, version consistency (SKILL.md `metadata.version` matches the top

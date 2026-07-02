@@ -86,3 +86,12 @@ short, the eval passes iff:
 A miss on any fixture does not get averaged away. One mis-detected archetype, or
 one fixture where the thin baseline ties or beats readmedaddy, falsifies the
 differentiator and the result is reported as-is.
+
+## Results
+
+| Run | Verdict | Detection | Lift range | Mean lift | Floor |
+|---|---|---|---|---|---|
+| [2026-07-02](results/2026-07-02/report.md) | **PASS** | 4/4 | +58.6 … +79.3 | +65.7 | 71.7–89.0 (≥ 70) |
+
+Each run's directory holds the full report, the raw per-pass judge scores, and
+the generated READMEs, so the numbers can be re-derived with `score.py`.

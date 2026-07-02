@@ -257,7 +257,9 @@ readmedaddy ships an eval harness and a CI pipeline instead of adjectives.
 | `skill-fixture/` | agent skill | a `SKILL.md` with trigger frontmatter |
 | `research-fixture/` | research | a notebook + `CITATION.cff` + a dataset note |
 
-The bar is conjunctive and per-fixture: **4/4** correct archetype detection, at least **+20** weighted points of lift on *every* fixture, and an absolute floor of **70/100** — no strong average can hide a weak fixture. A stdlib-only [`score.py`](skills/readmedaddy/eval/score.py) recomputes the weighted total from the per-gate scores, so a judge's arithmetic can be checked independently. A null or reversed result is reported as-is; the eval can say no. Per the pre-registration, run results live beside it once produced and are cited only after they exist — they are reported when they exist rather than asserted here.
+The bar is conjunctive and per-fixture: **4/4** correct archetype detection, at least **+20** weighted points of lift on *every* fixture, and an absolute floor of **70/100** — no strong average can hide a weak fixture. A stdlib-only [`score.py`](skills/readmedaddy/eval/score.py) recomputes the weighted total from the per-gate scores, so a judge's arithmetic can be checked independently. A null or reversed result is reported as-is; the eval can say no.
+
+**It said yes.** The first run (2026-07-02) cleared every pre-registered threshold: **4/4 detection** with all must-detect signals covered, per-fixture lift **+58.6 to +79.3** against the +20 bar, absolute scores **71.7–89.0** against the 70 floor, mean lift **+65.7**. Blind judging: 24 independent passes (3 per README) over anonymized files, medians recomputed by `score.py`. The full protocol, raw judge scores, and the generated READMEs are in [`eval/results/2026-07-02/`](skills/readmedaddy/eval/results/2026-07-02/report.md) — including the acknowledged limits (same-family self-judging; four of ten archetypes exercised).
 
 **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs four jobs on every push and pull request:
 
