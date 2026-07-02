@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+*.log
+__pycache__/
+.venv/
+.readmedaddy/
+.playwright-mcp/
+docs/readmedaddy-compendium.html

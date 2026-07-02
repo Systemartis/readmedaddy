@@ -1,0 +1,15 @@
+{
+  "name": "tidal-microplastic-flux",
+  "archetype": "research",
+  "language": "python-notebook",
+  "must_detect_signals": [
+    "CITATION.cff present with title, authors, abstract, and a DOI field",
+    "a computational notebook (analysis.ipynb) reproduces a headline figure",
+    "a dataset note (data/DATASET.md) describes provenance, schema, and license",
+    "results/ holds a reproducible figure/table tied to the abstract's claim",
+    "no installable package or CLI — it is a reproducibility artifact, not software"
+  ],
+  "baseline_readme": "baseline-README.md",
+  "expected_visual": "a results table/figure reference and the citation block; not an ASCII banner",
+  "notes": "Detection must not mistake the Python notebook for a library. The research README leads with the abstract/result, how to reproduce it, the dataset, and the citation; G7 (results/credibility), G1 (abstract), and G6 (citations/links) carry the most weight."
+}

@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this dataset or code, please cite the following."
+title: "Tidal modulation of microplastic flux in a temperate estuary"
+abstract: >-
+  We quantify microplastic particle flux across a temperate tidal estuary over
+  one lunar cycle and show a 2.3x enrichment on the ebb tide relative to slack
+  water. Code and the sampling dataset are released for reproduction.
+type: dataset
+authors:
+  - family-names: "Rivera"
+    given-names: "A."
+  - family-names: "Okafor"
+    given-names: "J."
+version: "1.0.0"
+date-released: "2026-03-18"
+license: "CC-BY-4.0"
+keywords:
+  - microplastics
+  - estuary
+  - tidal-flux
+  - reproducibility
+identifiers:
+  - type: doi
+    value: "10.0000/zenodo.0000000"
+    description: "Archived release (placeholder DOI)"

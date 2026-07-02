@@ -1,0 +1,24 @@
+{
+  // Lenient prose-friendly markdownlint config. Structure rules stay on;
+  // cosmetic/length rules that fight readable docs — ASCII banners, badge
+  // rows, wide comparison tables — are off.
+  "config": {
+    "MD013": false, // line length — prose, badge rows and tables run long on purpose
+    "MD024": { "siblings_only": true }, // duplicate headings ok across sections
+    "MD033": false, // inline HTML (badges, <details>, alignment for banners)
+    "MD041": false, // first line need not be a heading (front matter / banner)
+    "MD036": false, // emphasis-as-heading (used intentionally in examples)
+    "MD040": false, // fenced code language hint optional (ASCII art blocks)
+    "MD060": false  // table pipe spacing style — not worth reflowing tables
+  },
+  // eval/fixtures hold raw input READMEs (deliberately weak test inputs) and
+  // eval/results hold generated output — neither is documentation, so skip them.
+  // docs/tournament-drafts hold the verbatim competing README drafts archived
+  // from the ranking tournament — preserved as-authored artifacts, not docs.
+  "ignores": [
+    "node_modules",
+    "**/eval/fixtures/**",
+    "**/eval/results/**",
+    "**/tournament-drafts/**"
+  ]
+}

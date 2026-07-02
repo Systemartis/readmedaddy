@@ -1,0 +1,9 @@
+sample_id,tide_phase,particles_per_l,temp_c
+S001,flood,4.1,11.2
+S002,slack-high,3.6,11.4
+S003,ebb,8.4,11.1
+S004,slack-low,3.9,10.8
+S005,flood,4.4,11.0
+S006,slack-high,3.5,11.3
+S007,ebb,8.6,10.9
+S008,slack-low,3.8,10.7

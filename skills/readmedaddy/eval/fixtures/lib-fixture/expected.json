@@ -1,0 +1,15 @@
+{
+  "name": "slugcase",
+  "archetype": "library",
+  "language": "python",
+  "must_detect_signals": [
+    "pyproject.toml has a [project] table but NO [project.scripts] / console entry point",
+    "src/slugcase/__init__.py exports a public API via __all__ (slugify, is_slug)",
+    "type hints plus a py.typed marker signal a typed library",
+    "tests/ exercises the public function (pytest)",
+    "classifiers and keywords frame it as an importable text-processing package"
+  ],
+  "baseline_readme": "baseline-README.md",
+  "expected_visual": "no banner needed — a concise API-usage code block and badges (version, license, CI) carry it",
+  "notes": "No CLI: the absence of a console_scripts/bin entry is the key disambiguator from the cli archetype. README should lead with import-and-call usage, not install-and-run."
+}

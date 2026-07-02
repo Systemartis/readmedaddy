@@ -1,0 +1,15 @@
+{
+  "name": "changelog-scribe",
+  "archetype": "agent-skill",
+  "language": "markdown",
+  "must_detect_signals": [
+    "a skills/<name>/SKILL.md file exists (skill package layout)",
+    "SKILL.md has YAML frontmatter with both `name` and `description`",
+    "the description is trigger-style (states WHEN to use, not what it does)",
+    "progressive disclosure via a references/ directory beside SKILL.md",
+    "no compiled binary or importable package — it ships as Markdown"
+  ],
+  "baseline_readme": "baseline-README.md",
+  "expected_visual": "no ASCII banner required; lead with the trigger/when-to-use and a concrete before/after example",
+  "notes": "readmedaddy's own archetype. README must surface the activation triggers and an install-into-skills-dir quickstart; G1 (hook/triggers), G4 (examples), and G8 (skill conventions) carry the most weight."
+}

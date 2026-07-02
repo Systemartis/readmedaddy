@@ -1,0 +1,28 @@
+{
+  "name": "chronr",
+  "version": "0.3.1",
+  "description": "Stopwatch and split-timer for shell pipelines.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "chronr": "./bin/chronr.js"
+  },
+  "main": "./src/timer.js",
+  "files": [
+    "bin/",
+    "src/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "cli",
+    "timer",
+    "stopwatch",
+    "shell",
+    "pipeline"
+  ]
+}

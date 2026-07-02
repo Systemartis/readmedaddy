@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate skill (structure, links, frontmatter, clean-for-publish)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: structural validation
+        run: python3 scripts/validate-skill.py
+
+  shell:
+    name: shell scripts (shellcheck + syntax + hook test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (preinstalled on ubuntu-latest)
+        run: |
+          shellcheck install.sh \
+            skills/readmedaddy/hooks/readme-drift.sh \
+            skills/readmedaddy/eval/hook/test-readme-drift.sh
+      - name: posix syntax check
+        run: |
+          sh -n install.sh
+          sh -n skills/readmedaddy/hooks/readme-drift.sh
+          sh -n skills/readmedaddy/eval/hook/test-readme-drift.sh
+      - name: hook behavior test
+        run: sh skills/readmedaddy/eval/hook/test-readme-drift.sh
+
+  python:
+    name: python scripts (compile + installer selftest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: py_compile
+        run: python3 -m py_compile scripts/install-hook.py skills/readmedaddy/eval/score.py
+      - name: install-hook selftest
+        run: python3 scripts/install-hook.py --selftest
+      - name: score.py selftest (weights mirror the rubric)
+        run: python3 skills/readmedaddy/eval/score.py --selftest
+
+  markdown:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: markdownlint
+        run: npx --yes markdownlint-cli2 "**/*.md" "#node_modules"
+        # The clean-for-publish (forbidden-reference) guard is owned by
+        # scripts/validate-skill.py in the `validate` job — single source.

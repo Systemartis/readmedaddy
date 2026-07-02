@@ -1,0 +1,15 @@
+{
+  "name": "chronr",
+  "archetype": "cli",
+  "language": "javascript",
+  "must_detect_signals": [
+    "package.json declares a `bin` field mapping `chronr` to an executable",
+    "bin/chronr.js begins with a `#!/usr/bin/env node` shebang",
+    "argument parsing includes a `--help`/`-h` and `--version`/`-v` branch",
+    "the tool exposes subcommands (start, split, stop, ls), not a library API",
+    "keywords and description frame it as a terminal/shell tool"
+  ],
+  "baseline_readme": "baseline-README.md",
+  "expected_visual": "ASCII wordmark or a copy-pasteable terminal demo block",
+  "notes": "Node entrypoint, not a Python package; detection must read the bin field rather than guess from language. Library export of timer.js is a secondary surface, not the primary archetype."
+}

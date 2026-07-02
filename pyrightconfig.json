@@ -1,0 +1,5 @@
+{
+  "exclude": [
+    "skills/readmedaddy/eval/fixtures/**"
+  ]
+}
