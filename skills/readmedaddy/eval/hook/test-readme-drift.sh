@@ -265,6 +265,61 @@ else
 	note fail "CHECK rename expected rc=1 naming src/main.js (rc=$rc, out: $out)"
 fi
 
+# --- modes and env overrides (characterization: current documented behavior) ---
+
+# (q) NOTIFY mode: stderr message, empty stdout, state recorded.
+# ONE invocation capturing both streams — notify records cooldown state, so a
+# second run would be silent on stderr and a two-invocation capture mis-fails.
+d=$(setup_repo)
+printf '{"hook":{"mode":"notify"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | sh "$HOOK" 2>"$d/.err.txt") )
+errout=$(cat "$d/.err.txt")
+if [ -z "$out" ] && printf '%s' "$errout" | grep -q 'readmedaddy:'; then
+	note ok "NOTIFY mode is stderr-only"
+else
+	note fail "NOTIFY expected empty stdout + stderr message (out: $out | err: $errout)"
+fi
+
+# (r) ENFORCE mode: blocks on every Stop (no cooldown recording).
+d=$(setup_repo)
+printf '{"hook":{"mode":"enforce"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out1=$(run_hook "$d" "$STDIN_CONT_FALSE")
+out2=$(run_hook "$d" "$STDIN_CONT_FALSE")
+enforce_ok=1
+case "$out1" in *'"decision":"block"'*) : ;; *) enforce_ok=0 ;; esac
+case "$out2" in *'"decision":"block"'*) : ;; *) enforce_ok=0 ;; esac
+if [ "$enforce_ok" = 1 ]; then
+	note ok "ENFORCE blocks on every Stop"
+else
+	note fail "ENFORCE expected block twice (got1: $out1 | got2: $out2)"
+fi
+
+# (s) ENV off: README_DADDY_HOOK=off silences hook mode even with drift.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | README_DADDY_HOOK=off sh "$HOOK") )
+if [ -z "$out" ]; then
+	note ok "ENV off silences hook mode"
+else
+	note fail "ENV off should be silent (got: $out)"
+fi
+
+# (t) ENV notify overrides config auto; --check ignores ENV off.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | README_DADDY_HOOK=notify sh "$HOOK" 2>/dev/null) )
+(cd "$d" && README_DADDY_HOOK=off sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ -z "$out" ] && [ "$rc" = 1 ]; then
+	note ok "ENV notify forces stderr-only; --check ignores ENV off"
+else
+	note fail "ENV override expected empty stdout + check rc=1 (out: $out, rc=$rc)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1
