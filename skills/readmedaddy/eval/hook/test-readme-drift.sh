@@ -395,6 +395,19 @@ else
 	note fail "CHECK committed drift expected rc=1 (rc=$rc)"
 fi
 
+# (z) GLOB-NAMED FILE must not mask drift: untracked 'README.m?' expands to
+# README.md under pathname expansion and silences everything (the bug).
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+touch "$d/README.m?"
+out=$( (cd "$d" && sh "$HOOK" --check 2>/dev/null) )
+rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'package.json'; then
+	note ok "GLOB-NAMED file does not mask drift"
+else
+	note fail "GLOB-NAMED expected rc=1 naming package.json (rc=$rc, out: $out)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1

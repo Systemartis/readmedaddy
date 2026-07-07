@@ -149,6 +149,9 @@ fi
 match_watch() {
 	mw_path=$1
 	mw_old=$IFS
+	# Save the caller's noglob state: restoring blindly with `set +f` would
+	# re-enable pathname expansion mid-loop for callers that turned it off.
+	case $- in *f*) mw_had_f=1 ;; *) mw_had_f=0 ;; esac
 	set -f
 	IFS='
 '
@@ -163,7 +166,7 @@ match_watch() {
 			case "$mw_path" in
 			"$mw_pre" | "$mw_pre"/*)
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -173,7 +176,7 @@ match_watch() {
 			case "$mw_path" in
 			"$mw_suf" | */"$mw_suf")
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -183,7 +186,7 @@ match_watch() {
 			case "$mw_path" in
 			"$mw_pre"*)
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -195,7 +198,7 @@ match_watch() {
 			case "$mw_path" in
 			$mw_pat)
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -203,7 +206,7 @@ match_watch() {
 		esac
 	done
 	IFS=$mw_old
-	set +f
+	if [ "$mw_had_f" = 0 ]; then set +f; fi
 	return 1
 }
 
@@ -215,6 +218,7 @@ committed_drift() {
 		return 0
 	fi
 	cd_old=$IFS
+	case $- in *f*) cd_had_f=1 ;; *) cd_had_f=0 ;; esac
 	set -f
 	IFS='
 '
@@ -223,7 +227,7 @@ committed_drift() {
 	# shellcheck disable=SC2086
 	cd_files=$(git -C "$root" log -1 --name-only --format= -- $watch_list 2>/dev/null)
 	IFS=$cd_old
-	set +f
+	if [ "$cd_had_f" = 0 ]; then set +f; fi
 	if [ -z "$cd_watched_ct" ]; then
 		return 0
 	fi
@@ -245,6 +249,8 @@ if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
 		exit 0
 	fi
 	range_drifted=
+	# Paths from git are data, never globs: expansion off for the whole loop.
+	set -f
 	while IFS= read -r rc_path; do
 		if [ -z "$rc_path" ]; then
 			continue
@@ -255,6 +261,7 @@ if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
 	done <<EOF
 $range_changed
 EOF
+	set +f
 	range_drifted=$(printf '%s' "$range_drifted" | grep -v '^$' | sort -u)
 	if [ -z "$range_drifted" ]; then
 		exit 0
@@ -268,6 +275,9 @@ fi
 readme_dirty=0
 dirty_watched=
 porcelain=$(git -C "$root" status --porcelain 2>/dev/null)
+# Porcelain paths are data, never globs: a file named 'README.m?' must not
+# expand to README.md and mask real drift. Expansion off for the whole loop.
+set -f
 while IFS= read -r pline; do
 	if [ -z "$pline" ]; then
 		continue
@@ -301,6 +311,7 @@ while IFS= read -r pline; do
 done <<EOF
 $porcelain
 EOF
+set +f
 
 # README being touched too means a refresh is already in progress: no nag.
 if [ "$readme_dirty" = 1 ]; then
