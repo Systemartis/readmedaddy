@@ -37,7 +37,9 @@ explicitly priced, and architecturally separated from detection.
 ### Prerequisites (Phase 0 — fix before building on top)
 
 Four confirmed defects in the shipped product are sequenced ahead of this
-work; they are planned separately and only summarized here:
+work. **They are in scope of the implementation plan derived from this spec**
+(its first milestone, §9 phase 1); this spec summarizes them and the plan
+specifies the fixes:
 
 1. Stop-hook committed-drift fallback over-triggers on fresh installs
    (drop/demote in hook mode; seed cooldown on first sight; cooldown per
@@ -83,7 +85,9 @@ must not reuse those names — and the parser is hardened anyway.
 Parser hardening (ships with the schema):
 
 - `readme-drift.sh` scopes its key extraction to the `hook` object instead
-  of the whole file; unknown `mode` values resolve to **notify + stderr
+  of the whole file, falling back to top-level v1 keys when no `hook`
+  object exists (hook-object-first, v1-fallback — so every historical
+  config keeps parsing); unknown `mode` values resolve to **notify + stderr
   warning**, never to blocking; `"off"` is accepted as a mode.
 - New `readme-drift.sh --lint-config`: validates JSON well-formedness (via
   python3 when available, degraded sh checks otherwise), known keys, and
@@ -98,11 +102,15 @@ Parser hardening (ships with the schema):
 `action.yml` branches on `github.event_name` instead of hard-skipping
 non-PR events:
 
-- `pull_request` (+ `merge_group`): current behavior — `--check --range
+- `pull_request`: current behavior — `--check --range
   origin/$BASE...HEAD`; `comment` posts/updates one sticky comment and
   **resolves it** (PATCH to a "resolved" body) when a later push fixes the
-  drift; `fail` fails the job. Merge-queue events pass through so a
-  required check cannot stall queues.
+  drift; `fail` fails the job.
+- `merge_group`: the job **must run and report** (a required check that
+  never reports is what stalls a queue). Range comes from the event payload
+  (`merge_group.base_sha...head_sha` — `github.base_ref` is empty here);
+  there is no PR to comment on, so `comment` degrades to a step-summary
+  line and a passing status; `fail` applies normally.
 - `push` (default branch): `--check --range $BEFORE...$SHA`, guarding the
   all-zeros SHA (branch creation / force push → fall back to rangeless
   `--check`). Response per `guard.main`.
@@ -113,10 +121,28 @@ non-PR events:
 
 Robustness fixes shipping with this extension: `--check` with no resolvable
 repo root exits 2 (a missing `actions/checkout` must not read as "fresh");
-config for PR gating is read from the **base ref** (`git show
-origin/$BASE:.readmedaddy.json`) so a PR cannot waive its own gate; sticky
-comment lookup uses `--paginate --slurp`; multiline `GITHUB_OUTPUT` uses a
-randomized heredoc delimiter.
+sticky comment lookup uses `--paginate --slurp`; multiline `GITHUB_OUTPUT`
+uses a randomized heredoc delimiter.
+
+**Base-ref config (gate-waive fix).** `readme-drift.sh` gains a
+`--config FILE` flag that replaces the working-tree `.readmedaddy.json`
+lookup for **all** settings (`enabled`, `mode`, `readme`, `watch`, and the
+`guard` section). During `pull_request`/`merge_group` events the action
+extracts the base ref's config to a temp file (`git show
+origin/$BASE:.readmedaddy.json > "$RUNNER_TEMP/rmd-config.json"`; on
+`merge_group`, `git show $MERGE_GROUP_BASE_SHA:.readmedaddy.json`) and passes
+it via `--config`; when the base ref has **no** config, the action passes
+`--config /dev/null` (defaults-only sentinel) — the flag is **never
+omitted** on PR-class events, so the PR head's working-tree config is never
+consulted. Consequence: a PR cannot waive its own gate by flipping
+`enabled`, emptying `watch`, repointing `readme`, or *introducing* a config
+where none existed; config changes take effect only once merged. All other
+events (push, schedule, local hook, `--check` without the flag) keep
+reading the working-tree config. The action reads `guard.*` values through
+the same hardened parser via a new `readme-drift.sh --print-config KEY`
+mode (never ad-hoc grep in workflow bash). Precedence: a `guard.pr` value
+in (base-ref) config wins over the action's legacy `mode` input; the input
+remains as the fallback for consumers without a config file.
 
 Default recommendation (wizard default, documented): layered
 T1 Stop hook + PR `comment` + `main: issue` + weekly sweep. Escalation to
@@ -126,9 +152,23 @@ practice.
 
 ## 4. The init wizard
 
-One outcome — `.readmedaddy.json` + optional `.github/workflows/
-readmedaddy.yml` + optional badge line — reachable through three faces that
-share **one serializer**:
+The wizard's writable artifact set — each item opt-in and enumerated in the
+preview before writing:
+
+- `.readmedaddy.json` (always),
+- `.github/workflows/readmedaddy.yml` (detection workflow: PR / main /
+  sweep),
+- `.github/workflows/readmedaddy-fix.yml` (tier-3 workflow — a **separate
+  file** because its triggers (`issue_comment`) and permissions
+  (`contents: write`, `pull-requests: write`) differ from the read-only
+  detection workflow; only written when `autofix.runner != off`),
+- one badge line edited into the README,
+- `.claude/settings.json` team-pinning entries (only via the explicit
+  plugin-pinning choice),
+- the Claude Code hook registration (via `install-hook.py`, or plugin
+  install once §6 / phase 6 ships).
+
+Three faces share **one serializer**:
 
 - **Agent-face**: "readmedaddy init" inside any agent with the skill loaded.
   The agent runs the detection pass, asks at most 3 conversational questions
@@ -137,11 +177,13 @@ share **one serializer**:
   a short `init` section; the agent never writes the config directly.
 - **Script-face**: `scripts/readmedaddy-init.py` (python3-stdlib, same
   dependency envelope as `install-hook.py`; the *detector* stays POSIX sh).
-  Numbered menus, Enter = detected default. Every question has a flag
-  (`--mode --readme --watch --gate --main --sweep --autofix-runner
-  --no-hook --yes --print --apply-required-check`); non-TTY without
-  sufficient flags is a hard error naming the missing flags; `--yes` runs
-  with zero questions; unknown flags are hard errors.
+  Numbered menus, Enter = detected default. Every question has a flag —
+  the complete set: `--mode --readme --watch --pr` (alias `--gate`)
+  `--main --sweep --autofix-runner --autofix-command --badge/--no-badge
+  --no-hook --yes --print --apply-required-check --onboard` (any question
+  added later MUST add its flag); non-TTY without sufficient flags is a hard error naming
+  the missing flags; `--yes` runs with zero questions; unknown flags are
+  hard errors.
 - **Onboarding PR** (opt-in, needs `gh`): `--onboard` opens a PR adding
   config + workflow + badge. The PR body contains a forecast — a dry-run of
   `--check --range` over the last ~10 merged PRs ("these N would have been
@@ -163,8 +205,10 @@ block.
 
 Behavioral rules (binding):
 
-- Touches exactly three artifacts (config, workflow, badge edit) plus the
-  optional hook registration — all enumerated in the preview.
+- **Writes nothing that was not enumerated in the preview.** The complete
+  possible artifact set is the list at the top of this section; a given run
+  writes only the subset the user chose, and the preview shows exactly that
+  subset.
 - Re-run = reconfigure seeded from current values; never
   overwrite-from-scratch; a template-inherited config must not make init
   unreachable.
@@ -200,9 +244,18 @@ and optionally on default-branch push. Fixed pipeline:
 2. Authoritative permission check (`getCollaboratorPermissionLevel` ≥
    write) **before any checkout**; 👀 reaction as ack.
 3. Fork PRs refused outright; checkout pins the resolved head **SHA**.
-4. Free drift check first (`--check --range`); exit early with a "nothing
-   to fix" comment when fresh — zero LLM spend on fresh READMEs.
-5. Skill exposure: `cp -R skills/readmedaddy .claude/skills/` (project
+4. **Second, pinned checkout of the readmedaddy distribution** — the
+   guarded repo does not vendor readmedaddy, so the workflow checks out
+   `Systemartis/readmedaddy` at a pinned release tag into
+   `.readmedaddy-dist/` (`actions/checkout` with `repository:` + `ref:` +
+   `path:`). The drift script and skill both come from there; the target
+   repo's tree is never executed.
+5. Free drift check first
+   (`.readmedaddy-dist/skills/readmedaddy/hooks/readme-drift.sh --check
+   --range`, with `--config` from the base ref as in §3); exit early with a
+   "nothing to fix" comment when fresh — zero LLM spend on fresh READMEs.
+   Skill exposure for the agent step:
+   `cp -R .readmedaddy-dist/skills/readmedaddy .claude/skills/` (project
    skills auto-load from the checkout).
 6. **Swappable agent block** — the pluggability contract: the agent edits
    the working tree only; no commit, no push, no PR. Default runtime is
@@ -213,11 +266,19 @@ and optionally on default-branch push. Fixed pipeline:
    `runner: command` substitutes `autofix.command` verbatim. The prompt
    always instructs reading the skill file explicitly so non-Claude
    runtimes behave identically.
-7. `peter-evans/create-pull-request` opens/updates the fix PR — idempotent
-   by stable branch name (`readmedaddy/fix-<n>`), never reopens a
-   human-closed PR, `delete-branch: true`. Default `GITHUB_TOKEN` gives
-   structural loop immunity (its PRs trigger no workflows); the no-CI-checks
-   trade-off and the PAT/App upgrade are documented in the generated file.
+7. Workspace scrub + scoped PR. The pinned distribution checkout and the
+   skill copy from step 4–5 live inside `$GITHUB_WORKSPACE` (checkout
+   `path:` cannot escape it), so before the PR step the workflow deletes
+   `.readmedaddy-dist/` and `.claude/skills/readmedaddy`, **and**
+   `peter-evans/create-pull-request` is scoped with `add-paths:` to the
+   configured README path only — both guards, so a failed or no-op agent
+   run produces no diff and therefore no PR, and a fix PR can never carry
+   the distribution or anything but the README change. Otherwise standard:
+   idempotent by stable branch name (`readmedaddy/fix-<n>`), never reopens
+   a human-closed PR, `delete-branch: true`. Default `GITHUB_TOKEN` gives
+   structural loop immunity (its PRs trigger no workflows); the
+   no-CI-checks trade-off and the PAT/App upgrade are documented in the
+   generated file.
 8. 🚀 reaction + comment linking the PR.
 
 The generated workflow warns (in comments) against rewiring onto
@@ -234,9 +295,11 @@ Systemartis/readmedaddy` works. For Claude users this supersedes
 `install.sh` + `install-hook.py` remain for opencode/copilot. The wizard
 and installer must detect the both-installed state (plugin + legacy
 settings hook = double firing) and migrate by running
-`install-hook.py --uninstall`. To verify during implementation: hook-consent
-UX at plugin install; whether project-scope uninstall cleans settings
-entries.
+`install-hook.py --uninstall`. Precisely: `install-hook.py` is Claude-only
+(it edits Claude Code `settings.json`); what remains for opencode/copilot
+is the skill-copy half of `install.sh`. To verify during implementation:
+hook-consent UX at plugin install; whether project-scope uninstall cleans
+settings entries.
 
 ## 7. Error handling
 
@@ -246,9 +309,10 @@ entries.
   it.
 - Action: exit 2 paths are always loud (`::error::` + guidance); unknown
   events no-op with a log line, never fail.
-- Tier-3 workflow: agent-step failure leaves no branch/PR (create-pull-
-  request only runs when a diff exists); permission failures comment the
-  reason on the PR.
+- Tier-3 workflow: agent-step failure leaves no branch/PR — guaranteed by
+  the §5 step-7 workspace scrub + `add-paths:` scoping, which ensure no
+  diff exists unless the agent actually changed the README; permission
+  failures comment the reason on the PR.
 
 ## 8. Testing
 
@@ -280,4 +344,5 @@ entries.
 7. Enforcement recipes/`--apply` + team pinning docs.
 
 Each phase lands independently shippable; the wizard is useful after
-phase 4 even if 5–7 slip.
+phase 4 even if 5–7 slip. Implementation planning happens **per phase
+group** (1–2, 3–4, 5–7), not as one monolithic plan.
