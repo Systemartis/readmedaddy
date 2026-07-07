@@ -6,6 +6,20 @@ All notable changes to readmedaddy are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Config schema v2**: a `guard` section (`pr`, `main`, `sweep`,
+  `autofix.runner`, `autofix.command`) with collision-safe key names, consumed
+  by the GitHub Action from v0.3.0. A published JSON Schema
+  (`schema/readmedaddy.schema.json`) gives editors validation via `$schema`.
+- **`--config FILE`**: run the detector against an explicit config (CI gates
+  pass the PR base ref's copy — a PR can no longer waive its own gate;
+  `/dev/null` = pure defaults).
+- **`--print-config KEY`**: resolved config values through the one hardened
+  parser, for workflows and scripts.
+- **`--lint-config`**: JSON well-formedness + unknown-key detection (python3,
+  stdlib only) and enum validation (pure sh), exit 0/1/2.
+
 ### Fixed
 
 - **Fresh installs no longer open with a nag**: the Stop hook seeds its cooldown
