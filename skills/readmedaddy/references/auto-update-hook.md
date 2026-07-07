@@ -244,11 +244,14 @@ again, which prompts again. Two guards prevent that:
   hook-driven continuation, it sets `stop_hook_active: true` on stdin. The hook sees
   that and exits immediately, so it never fires twice within the same turn.
 - **Cooldown state:** the hook writes a signature of the drift it just handled —
-  the short HEAD sha plus the sorted set of dirty watched files — to
-  `.git/readmedaddy-state`. On the next Stop, an identical signature means "same
-  drift, already nagged," and it exits. A new signature (you changed different
-  files, or committed) is what lets it fire again. (`enforce` mode intentionally
-  skips recording, so it re-prompts until the README moves.)
+  the short HEAD sha plus the drift class (working-tree or committed) — to
+  `.git/readmedaddy-state`. Dirtying more watched files at the same HEAD is the
+  same drift event: one nudge per HEAD, not one per file. A new commit is what
+  re-arms it. On the **first** run in a repo where the only drift predates the
+  hook (clean tree, stale README from before install), the hook seeds this state
+  silently instead of nagging — a fresh install never opens with a complaint
+  about history it didn't witness. (`enforce` mode skips both the seeding and
+  the recording, so it re-prompts until the README moves.)
 
 The state file lives *inside* `.git/`, so it is per-clone bookkeeping by
 construction — it can never appear as an untracked file in your working tree

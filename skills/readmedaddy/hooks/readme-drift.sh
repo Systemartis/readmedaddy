@@ -15,7 +15,7 @@
 #                      session-scoped README_DADDY_HOOK env switch.
 #
 # Everything here is local git + POSIX sh: no network, no telemetry, and no
-# writes outside .readmedaddy/state (hook-mode cooldown only).
+# writes outside .git/readmedaddy-state (hook-mode cooldown only).
 # POSIX sh, shellcheck-clean. No bashisms.
 
 # Default set of README-relevant signal paths (baked in; overridable via
@@ -332,8 +332,15 @@ head_sha=$(git -C "$root" rev-parse --short HEAD 2>/dev/null)
 if [ -z "$head_sha" ]; then
 	head_sha=nohead
 fi
-files_sig=$(printf '%s' "$signal_files" | sort -u | tr '\n' ',')
-signature="$head_sha|$files_sig"
+# Drift class: working-tree edits vs committed-only drift. The signature is
+# HEAD + class (NOT the file list): dirtying a second watched file mid-session
+# is the same drift event, not a new nag.
+if [ -n "$dirty_watched" ]; then
+	drift_class=wt
+else
+	drift_class=committed
+fi
+signature="$head_sha|$drift_class"
 # Cooldown state lives INSIDE .git/ so the hook never litters the target
 # repo's working tree with an untracked directory.
 git_dir=$(git -C "$root" rev-parse --git-dir 2>/dev/null)
@@ -342,15 +349,24 @@ case "$git_dir" in
 /*) state_file=$git_dir/readmedaddy-state ;;
 *) state_file=$root/$git_dir/readmedaddy-state ;;
 esac
-stored=$(cat "$state_file" 2>/dev/null)
-if [ "$stored" = "$signature" ]; then
-	exit 0
-fi
 
 record_state() {
 	printf '%s\n' "$signature" >"$state_file" 2>/dev/null || return 0
 	return 0
 }
+
+stored=$(cat "$state_file" 2>/dev/null)
+if [ "$stored" = "$signature" ]; then
+	exit 0
+fi
+
+# First sight of this repo (no state yet) + only committed drift = pre-existing
+# staleness from before the hook was installed. Seed the cooldown silently so a
+# fresh install never opens with a nag. enforce mode is exempt on purpose.
+if [ ! -f "$state_file" ] && [ "$drift_class" = committed ] && [ "$mode" != enforce ]; then
+	record_state
+	exit 0
+fi
 
 # Build the human-readable change list (truncated).
 list=$(printf '%s' "$signal_files" | sort -u | tr '\n' ',' | sed 's/^,//; s/,$//')

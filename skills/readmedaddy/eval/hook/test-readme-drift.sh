@@ -320,6 +320,81 @@ else
 	note fail "ENV override expected empty stdout + check rc=1 (out: $out, rc=$rc)"
 fi
 
+# --- A1: fresh-install seeding + per-HEAD cooldown ---
+
+# (u) FRESH-INSTALL: committed drift only, no state file -> silent, state seeded.
+# The drift commit gets a +60s committer date: %ct is second-granular and
+# committed_drift needs strictly-newer to register (see plan conventions).
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+60)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+60)) +0000" \
+	git -C "$d" commit -qam "bump manifest"              # committed drift, clean tree
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+if [ -z "$out" ] && [ -f "$d/.git/readmedaddy-state" ]; then
+	note ok "FRESH-INSTALL committed drift is seeded silently"
+else
+	note fail "FRESH-INSTALL expected silence + seeded state (got: $out)"
+fi
+
+# (v) POST-SEED: a NEW commit touching a watched file fires exactly once.
+printf '{"name":"x","v":3}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+120)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+120)) +0000" \
+	git -C "$d" commit -qam "bump again"
+out1=$(run_hook "$d" "$STDIN_CONT_FALSE")
+out2=$(run_hook "$d" "$STDIN_CONT_FALSE")
+seed_ok=1
+case "$out1" in *'"decision":"block"'*) : ;; *) seed_ok=0 ;; esac
+[ -n "$out2" ] && seed_ok=0
+if [ "$seed_ok" = 1 ]; then
+	note ok "POST-SEED new committed drift blocks once, then silent"
+else
+	note fail "POST-SEED expected block then silence (got1: $out1 | got2: $out2)"
+fi
+
+# (w) PER-HEAD: second dirty watched file at the same HEAD does NOT re-fire.
+d=$(setup_repo)
+mkdir -p "$d/src"
+printf 'a\n' >"$d/src/a.js"
+git -C "$d" add -A && git -C "$d" commit -qm src
+printf 'a2\n' >"$d/src/a.js"
+out1=$(run_hook "$d" "$STDIN_CONT_FALSE")
+printf 'b\n' >"$d/src/b.js"
+out2=$(run_hook "$d" "$STDIN_CONT_FALSE")
+perhead_ok=1
+case "$out1" in *'"decision":"block"'*) : ;; *) perhead_ok=0 ;; esac
+[ -n "$out2" ] && perhead_ok=0
+if [ "$perhead_ok" = 1 ]; then
+	note ok "PER-HEAD cooldown: new dirty file at same HEAD stays silent"
+else
+	note fail "PER-HEAD expected block then silence (got1: $out1 | got2: $out2)"
+fi
+
+# (x) ENFORCE is exempt from seeding: fresh repo, committed drift -> still blocks.
+d=$(setup_repo)
+printf '{"hook":{"mode":"enforce"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+60)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+60)) +0000" \
+	git -C "$d" commit -qam "bump manifest"
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+case "$out" in
+*'"decision":"block"'*) note ok "ENFORCE exempt from first-sight seeding" ;;
+*) note fail "ENFORCE fresh committed drift should block (got: $out)" ;;
+esac
+
+# (y) --check is unaffected by seeding: committed drift still exits 1.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+60)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+60)) +0000" \
+	git -C "$d" commit -qam "bump manifest"
+(cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 1 ]; then
+	note ok "CHECK still reports committed drift (no seeding in check mode)"
+else
+	note fail "CHECK committed drift expected rc=1 (rc=$rc)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1
