@@ -147,6 +147,13 @@ fi
 # /dev/null is the defaults-only sentinel and fails the -f test below).
 if [ "$CONFIG_SET" = 1 ]; then
 	config=$CONFIG_OVERRIDE
+	# Only the literal /dev/null sentinel means "defaults on purpose". Any other
+	# missing path is a broken extraction step or a typo — a CI gate silently
+	# flipping to defaults is exactly the failure --config exists to prevent.
+	if [ "$config" != /dev/null ] && [ ! -f "$config" ]; then
+		printf 'readmedaddy: --config %s is not a regular file (use /dev/null for pure defaults)\n' "$config" >&2
+		exit 2
+	fi
 else
 	config=$root/.readmedaddy.json
 fi
@@ -181,13 +188,17 @@ if [ -f "$config" ]; then
 	cfg_mode=$(printf '%s' "$cfg_hook" | sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 	cfg_readme=$(printf '%s' "$cfg_hook" | sed -n 's/.*"readme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 	cfg_watch=$(printf '%s' "$cfg_hook" | sed -n 's/.*"watch"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')
-	# guard.* keys are collision-safe by schema design (names unique file-wide),
-	# so flat whole-file extraction is correct for them.
-	cfg_guard_pr=$(printf '%s' "$cfg" | sed -n 's/.*"pr"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_guard_main=$(printf '%s' "$cfg" | sed -n 's/.*"main"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_guard_sweep=$(printf '%s' "$cfg" | sed -n 's/.*"sweep"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_guard_runner=$(printf '%s' "$cfg" | sed -n 's/.*"runner"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_guard_command=$(printf '%s' "$cfg" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	# guard.* extraction is scoped like hook: pull the autofix object out first
+	# (it is flat), strip it, then the remaining guard object is flat too.
+	# Keys in other sections can neither override nor invent guard values.
+	cfg_autofix=$(printf '%s' "$cfg" | sed -n 's/.*"autofix"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+	cfg_noaf=$(printf '%s' "$cfg" | sed 's/"autofix"[[:space:]]*:[[:space:]]*{[^}]*}//')
+	cfg_guard=$(printf '%s' "$cfg_noaf" | sed -n 's/.*"guard"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+	cfg_guard_pr=$(printf '%s' "$cfg_guard" | sed -n 's/.*"pr"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_main=$(printf '%s' "$cfg_guard" | sed -n 's/.*"main"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_sweep=$(printf '%s' "$cfg_guard" | sed -n 's/.*"sweep"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_runner=$(printf '%s' "$cfg_autofix" | sed -n 's/.*"runner"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_command=$(printf '%s' "$cfg_autofix" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 fi
 
 # README path (relative to root).
@@ -224,7 +235,10 @@ off)
 	fi
 	;;
 *)
-	printf 'readmedaddy: unknown mode "%s" in .readmedaddy.json — treating as notify (valid: auto|notify|enforce|off)\n' "$mode" >&2
+	# Warn on the surfaces that ACT on mode; lint reports it in its own words.
+	if [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
+		printf 'readmedaddy: unknown mode "%s" in .readmedaddy.json — treating as notify (valid: auto|notify|enforce|off)\n' "$mode" >&2
+	fi
 	mode=notify
 	;;
 esac
@@ -298,6 +312,12 @@ KNOWN = {
     "guard": {"pr", "main", "sweep", "autofix"},
     "guard.autofix": {"runner", "command"},
 }
+TYPES = {
+    "hook.enabled": bool, "hook.mode": str, "hook.readme": str,
+    "hook.watch": list, "guard.pr": str, "guard.main": str,
+    "guard.sweep": str, "guard.autofix.runner": str,
+    "guard.autofix.command": str,
+}
 try:
     cfg = json.load(open(sys.argv[1]))
 except Exception:
@@ -310,13 +330,35 @@ def walk(obj, path):
     if allowed is None:
         return
     for k, v in obj.items():
+        key = f"{path + '.' if path else ''}{k}"
         if k not in allowed:
-            bad.append(f"{path + '.' if path else ''}{k}")
-        else:
-            walk(v, f"{path + '.' if path else ''}{k}")
+            bad.append(f"unknown key: {key}")
+            continue
+        want = TYPES.get(key)
+        if want and not isinstance(v, want):
+            bad.append(
+                f"{key}: expected {want.__name__}, got {type(v).__name__}"
+                f" ({v!r})"
+            )
+            continue
+        walk(v, key)
 walk(cfg, "")
+# The sh parser cannot cross braces or escaped quotes inside strings; a value
+# it would misread must fail lint, not silently resolve to defaults.
+hook = cfg.get("hook", {})
+if isinstance(hook, dict):
+    for k, v in hook.items():
+        for item in (v if isinstance(v, list) else [v]):
+            if isinstance(item, str) and ("{" in item or "}" in item):
+                bad.append(f"hook.{k}: braces in string values break the sh parser: {item!r}")
+autofix = cfg.get("guard", {})
+autofix = autofix.get("autofix", {}) if isinstance(autofix, dict) else {}
+if isinstance(autofix, dict):
+    cmd = autofix.get("command")
+    if isinstance(cmd, str) and ('"' in cmd or "{" in cmd or "}" in cmd):
+        bad.append("guard.autofix.command: quotes/braces in the value break the sh parser — keep the command quote-free or wrap it in a script")
 for b in bad:
-    print(f"readmedaddy --lint-config: unknown key: {b}")
+    print(f"readmedaddy --lint-config: {b}")
 sys.exit(1 if bad else 0)
 PYEOF
 			lint_fail=1

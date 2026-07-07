@@ -15,6 +15,10 @@ fi
 
 # Keep the test hermetic regardless of caller environment.
 unset README_DADDY_HOOK 2>/dev/null || true
+# ...including global/system git config (core.hooksPath, templates, etc.).
+GIT_CONFIG_GLOBAL=/dev/null
+GIT_CONFIG_SYSTEM=/dev/null
+export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 
 TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/rmd-hook.XXXXXX")
 PASS=0
@@ -158,10 +162,10 @@ printf '{"name":"x","v":2}\n' >"$d/package.json"
 (cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
 out=$( (cd "$d" && sh "$HOOK" --check) )
 rc=$?
-if [ "$rc" = 1 ] && [ ! -e "$d/.readmedaddy" ]; then
+if [ "$rc" = 1 ] && [ ! -e "$d/.readmedaddy" ] && [ ! -e "$d/.git/readmedaddy-state" ]; then
 	note ok "CHECK is idempotent and writes no cooldown state"
 else
-	note fail "CHECK second run expected rc=1 and no state dir (rc=$rc)"
+	note fail "CHECK second run expected rc=1 and no state anywhere (rc=$rc)"
 fi
 
 # (i2) HOOK mode keeps the working tree clean: cooldown state lives inside
@@ -612,6 +616,68 @@ if command -v python3 >/dev/null 2>&1; then
 		note ok "lint: unknown key exits 1 naming it"
 	else
 		note fail "lint unknown key expected 1 naming prr (rc=$rc, err: $errout)"
+	fi
+fi
+
+# --- review-gate hardening (guard scoping, config sentinel, lint depth) ---
+
+# (ar) guard keys only read from the guard object: misnamed or junk sections
+# must not override (or invent) guard values.
+d=$(setup_repo)
+printf '{"x":{"pr":"fail"}}\n' >"$d/.readmedaddy.json"
+v1=$( (cd "$d" && sh "$HOOK" --print-config guard.pr 2>/dev/null) )
+printf '{"guard":{"pr":"comment"},"x":{"pr":"fail"}}\n' >"$d/.readmedaddy.json"
+v2=$( (cd "$d" && sh "$HOOK" --print-config guard.pr 2>/dev/null) )
+if [ "$v1" = comment ] && [ "$v2" = comment ]; then
+	note ok "guard extraction is scoped: junk sections cannot override"
+else
+	note fail "guard scoping expected comment/comment (got: $v1/$v2)"
+fi
+
+# (as) --config pointing at a MISSING file exits 2 (only /dev/null means defaults).
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+(cd "$d" && sh "$HOOK" --check --config /no/such/rmd-config.json >/dev/null 2>&1); rc1=$?
+(cd "$d" && sh "$HOOK" --lint-config --config /no/such/rmd-config.json >/dev/null 2>&1); rc2=$?
+if [ "$rc1" = 2 ] && [ "$rc2" = 2 ]; then
+	note ok "--config with a missing file exits 2 (no silent defaults)"
+else
+	note fail "--config missing file expected 2/2 (got: $rc1/$rc2)"
+fi
+
+# (at) lint flags braces inside hook string values (they break the sh parser).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"hook":{"watch":["src/{core,cli}/**"]}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'brace'; then
+		note ok "lint: braces in hook strings exit 1"
+	else
+		note fail "lint braces expected 1 naming braces (rc=$rc, err: $errout)"
+	fi
+fi
+
+# (au) lint flags a double-quote inside autofix.command (sh parser truncates it).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"guard":{"autofix":{"runner":"command","command":"mycli --prompt \\"fix\\" --yes"}}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'command'; then
+		note ok "lint: quotes in autofix.command exit 1"
+	else
+		note fail "lint command-quote expected 1 (rc=$rc, err: $errout)"
+	fi
+fi
+
+# (av) lint flags wrong types: "enabled":"false" (string) must not lint clean.
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"hook":{"enabled":"false"}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'enabled'; then
+		note ok "lint: string enabled exits 1 naming the key"
+	else
+		note fail "lint type-check expected 1 naming enabled (rc=$rc, err: $errout)"
 	fi
 fi
 
