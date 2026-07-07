@@ -4,6 +4,26 @@ All notable changes to readmedaddy are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Fresh installs no longer open with a nag**: the Stop hook seeds its cooldown
+  on first sight of a repo whose staleness predates the install, and the
+  cooldown is keyed per HEAD + drift class — one nudge per drift event, not one
+  per newly-touched file. `enforce` mode is exempt by design.
+- **Glob-named files can no longer mask drift** (pathname expansion disabled
+  around the status/range loops).
+- **Non-ASCII watched paths** now match in `--check --range` mode
+  (`core.quotePath=false`).
+- **`--check` fails loudly (exit 2)** outside a git repo and on shallow clones
+  where committed-drift comparison would be meaningless — a misconfigured CI
+  gate can no longer pass silently green.
+- **References no longer instruct live web checks** — every G2/G7 verification
+  step is offline-checkable, matching SKILL.md's operate-offline mandate.
+- **README's PR-gate snippet is a complete, valid workflow** pinned to the
+  moving `@v0` tag; `validate-skill.py` now fails CI on stale action pins.
+
 ## [0.2.1] - 2026-07-02
 
 Fixes from an adversarial deep-dive review (every finding below was confirmed
