@@ -211,6 +211,19 @@ cd readmedaddy && ./install.sh
 
 **Uninstall — one command, complete removal:** `./install.sh --uninstall` deletes every installed skill copy and removes the Stop-hook entry from your `settings.json`, printing each path it touches. Nothing else on the machine is affected.
 
+**Claude Code plugin (alternative install):** the repo is also a plugin — `/plugin marketplace add Systemartis/readmedaddy`, then `/plugin install readmedaddy@readmedaddy`. The Stop hook ships inside the plugin (your `settings.json` is never edited) and `/plugin uninstall` removes everything cleanly. If you previously ran `./install.sh`, run `./install.sh --uninstall` first — having both registers the hook twice.
+
+## Guard a repo (init wizard)
+
+One command configures the whole system — drift hook, CI gate on PRs and merge queues, merge-to-main dashboard, weekly sweep, badge:
+
+```sh
+python3 scripts/readmedaddy-init.py          # interactive: ≤6 questions, Enter = detected default
+python3 scripts/readmedaddy-init.py --yes    # the recommended preset, zero questions
+```
+
+Or ask your agent: *"readmedaddy init"*. Every question has a flag (see `--help`), re-running reconfigures without clobbering hand edits, and nothing is written before the preview. To make the check **required** (drifting PRs cannot merge), the wizard prints the exact rulesets recipe — start with `enforcement: evaluate` to dry-run it. Teams can also pin the local tier through version control: a project `.claude/settings.json` with `extraKnownMarketplaces` + `enabledPlugins: {"readmedaddy@readmedaddy": true}` gives every Claude Code teammate the Stop hook automatically.
+
 ## Local-only by design
 
 Everything readmedaddy ships runs on your machine — stated here, and enforced by CI, not just promised.
