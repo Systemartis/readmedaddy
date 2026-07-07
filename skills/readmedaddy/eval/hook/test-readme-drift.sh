@@ -681,6 +681,19 @@ if command -v python3 >/dev/null 2>&1; then
 	fi
 fi
 
+# (aw) --print-config --raw: raw value when present, EMPTY when absent (no
+# default substitution) — presence becomes observable through the one parser.
+d=$(setup_repo)
+printf '{"guard":{"pr":"fail"}}\n' >"$d/.readmedaddy.json"
+v1=$( (cd "$d" && sh "$HOOK" --print-config guard.pr --raw 2>/dev/null) ); rc1=$?
+rm "$d/.readmedaddy.json"
+v2=$( (cd "$d" && sh "$HOOK" --print-config guard.pr --raw 2>/dev/null) ); rc2=$?
+if [ "$v1" = fail ] && [ -z "$v2" ] && [ "$rc1" = 0 ] && [ "$rc2" = 0 ]; then
+	note ok "--raw prints value when present, empty when absent"
+else
+	note fail "--raw expected fail/<empty> rc 0/0 (got: '$v1'/'$v2' rc $rc1/$rc2)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1

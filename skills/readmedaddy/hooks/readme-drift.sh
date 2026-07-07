@@ -49,6 +49,7 @@ CONFIG_SET=0
 PRINT_MODE=0
 PRINT_KEY=
 LINT_MODE=0
+RAW_MODE=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--check) CHECK_MODE=1 ;;
@@ -80,6 +81,7 @@ while [ $# -gt 0 ]; do
 		PRINT_MODE=1
 		;;
 	--lint-config) LINT_MODE=1 ;;
+	--raw) RAW_MODE=1 ;;
 	*)
 		# A typo'd flag must never pass silently green (e.g. --chekc falling
 		# through to hook mode and exiting 0 in a CI gate). Loud, always.
@@ -111,6 +113,10 @@ if [ "$PRINT_MODE" = 1 ] && [ "$CHECK_MODE" = 1 ]; then
 fi
 if [ "$LINT_MODE" = 1 ] && { [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ]; }; then
 	printf 'readmedaddy: --lint-config runs alone (not with --check/--print-config)\n' >&2
+	exit 2
+fi
+if [ "$RAW_MODE" = 1 ] && [ "$PRINT_MODE" = 0 ]; then
+	printf 'readmedaddy: --raw only modifies --print-config\n' >&2
 	exit 2
 fi
 
@@ -247,6 +253,25 @@ esac
 # GitHub Action and scripts. Reports the RAW configured value (defaults when
 # absent) — it never gates, never validates. Lint with --lint-config.
 if [ "$PRINT_MODE" = 1 ]; then
+	# --raw: the configured value verbatim, EMPTY when absent — presence is
+	# observable, so consumers can implement config-wins-over-input precedence.
+	if [ "$RAW_MODE" = 1 ]; then
+		case "$PRINT_KEY" in
+		hook.enabled) printf '%s\n' "$en" ;;
+		hook.mode) printf '%s\n' "$cfg_mode" ;;
+		hook.readme) printf '%s\n' "$cfg_readme" ;;
+		guard.pr) printf '%s\n' "$cfg_guard_pr" ;;
+		guard.main) printf '%s\n' "$cfg_guard_main" ;;
+		guard.sweep) printf '%s\n' "$cfg_guard_sweep" ;;
+		guard.autofix.runner) printf '%s\n' "$cfg_guard_runner" ;;
+		guard.autofix.command) printf '%s\n' "$cfg_guard_command" ;;
+		*)
+			printf 'readmedaddy --print-config: unknown key: %s\n' "$PRINT_KEY" >&2
+			exit 2
+			;;
+		esac
+		exit 0
+	fi
 	case "$PRINT_KEY" in
 	hook.enabled) printf '%s\n' "${en:-true}" ;;
 	hook.mode) printf '%s\n' "${cfg_mode:-auto}" ;;
