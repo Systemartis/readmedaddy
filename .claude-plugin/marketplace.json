@@ -1,0 +1,14 @@
+{
+  "name": "readmedaddy",
+  "owner": {
+    "name": "Systemartis",
+    "url": "https://github.com/Systemartis"
+  },
+  "plugins": [
+    {
+      "name": "readmedaddy",
+      "source": "./",
+      "description": "READMEs that earn their front page — archetype-aware generation, multi-gate ranking, and a zero-network drift detector wired in as a Stop hook."
+    }
+  ]
+}

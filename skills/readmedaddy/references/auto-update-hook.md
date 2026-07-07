@@ -117,9 +117,24 @@ copy-paste starting point.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `hook.enabled` | boolean | `true` | `false` turns the hook off for this repo. |
-| `hook.mode` | string | `"auto"` | `"auto"`, `"notify"`, or `"enforce"`. |
+| `hook.mode` | string | `"auto"` | `"auto"`, `"notify"`, `"enforce"`, or `"off"` (hook disabled; `--check` unaffected). Unknown values degrade to `notify` with a warning — never to blocking. |
 | `hook.readme` | string | `"README.md"` | Path to the README the hook watches. |
 | `hook.watch` | string[] | the default list above | Patterns of files whose changes imply README drift: exact paths, `dir/**` (prefix), `**/name` (suffix), or plain globs like `docs/*.md` (fnmatch semantics — `*` also crosses `/`). |
+| `guard.pr` | string | `"comment"` | PR gate: `"off"`, `"comment"` (sticky advisory), `"fail"` (red check). Consumed by the GitHub Action from v0.3.0. |
+| `guard.main` | string | `"off"` | Default-branch push response: `"off"`, `"issue"` (pinned dashboard issue), `"fail"`. From v0.3.0. |
+| `guard.sweep` | string | `"off"` | `"weekly"` re-checks freshness on a schedule. From v0.3.0. |
+| `guard.autofix.runner` | string | `"off"` | Opt-in fix tier: `"claude"` or `"command"` (uses `guard.autofix.command`). Costs LLM tokens. From v0.3.0. |
+
+### Validate your config
+
+```sh
+readme-drift.sh --lint-config          # exit 0 valid, 1 problems, 2 usage
+readme-drift.sh --print-config guard.pr  # resolved value (default if absent)
+```
+
+`--lint-config` checks JSON well-formedness and unknown keys (python3, stdlib
+only) plus enum values (pure sh). Wizard-written configs also reference the
+published JSON Schema via `$schema`, so editors validate as you type.
 
 Example:
 
@@ -143,10 +158,10 @@ Example:
 ```
 
 One parsing caveat (deliberately simple, no JSON parser in POSIX sh): the hook
-reads the **last** occurrence of each key anywhere in the file — including
-inside string values. Keep the real `hook` object *after* any documentation
-strings (as the shipped example does), and don't put text like `"enabled":
-false` inside a doc string below it.
+reads its keys from the **`hook` object** — everything between `"hook": {` and
+the first `}`. Keys elsewhere in the file (doc strings, other sections) are
+ignored. Keep the `hook` object free of nested objects; validate the whole
+file any time with `readme-drift.sh --lint-config`.
 
 ## Standalone `--check` mode: any agent, CI, git hooks
 
@@ -155,13 +170,14 @@ The same drift logic runs without any agent — pure local git and POSIX sh:
 ```sh
 readme-drift.sh --check                             # working tree (+ last-commit fallback)
 readme-drift.sh --check --range origin/main...HEAD  # commit range, for CI
+readme-drift.sh --check --config /path/to/config.json  # explicit config (CI: the base ref's copy)
 ```
 
 | Exit | Meaning |
 |------|---------|
-| `0` | fresh — or nothing to check (no git repo, no README, `enabled: false`) |
+| `0` | fresh — or nothing to check (no README, `enabled: false`) |
 | `1` | drift — the drifted watched files print to stdout, one per line |
-| `2` | usage or git error (bad `--range`) — loud on purpose, so a misconfigured CI gate fails visibly |
+| `2` | usage or git error (bad `--range`, not a git repo, shallow clone in committed-drift mode) — loud on purpose, so a misconfigured CI gate fails visibly |
 
 Semantics that differ from Stop-hook mode, deliberately:
 
@@ -172,6 +188,9 @@ Semantics that differ from Stop-hook mode, deliberately:
 - **Respects `.readmedaddy.json`.** `enabled: false`, a custom `readme`, and a
   custom `watch` list apply to every surface, so a project configures drift
   once.
+- **`--config FILE`** makes FILE the effective `.readmedaddy.json` (all keys);
+  `--config /dev/null` runs on pure defaults. CI gates use this to read the
+  config from the PR's base ref, so a PR cannot waive its own gate.
 
 **Git pre-commit warning** (universal — no agent, warns without blocking):
 
@@ -244,11 +263,14 @@ again, which prompts again. Two guards prevent that:
   hook-driven continuation, it sets `stop_hook_active: true` on stdin. The hook sees
   that and exits immediately, so it never fires twice within the same turn.
 - **Cooldown state:** the hook writes a signature of the drift it just handled —
-  the short HEAD sha plus the sorted set of dirty watched files — to
-  `.git/readmedaddy-state`. On the next Stop, an identical signature means "same
-  drift, already nagged," and it exits. A new signature (you changed different
-  files, or committed) is what lets it fire again. (`enforce` mode intentionally
-  skips recording, so it re-prompts until the README moves.)
+  the short HEAD sha plus the drift class (working-tree or committed) — to
+  `.git/readmedaddy-state`. Dirtying more watched files at the same HEAD is the
+  same drift event: one nudge per HEAD, not one per file. A new commit is what
+  re-arms it. On the **first** run in a repo where the only drift predates the
+  hook (clean tree, stale README from before install), the hook seeds this state
+  silently instead of nagging — a fresh install never opens with a complaint
+  about history it didn't witness. (`enforce` mode skips both the seeding and
+  the recording, so it re-prompts until the README moves.)
 
 The state file lives *inside* `.git/`, so it is per-clone bookkeeping by
 construction — it can never appear as an untracked file in your working tree
@@ -256,9 +278,9 @@ and never needs a gitignore entry. `--check` mode writes no state at all.
 
 ## Honesty note
 
-Known ceiling: paths that git quotes in porcelain output (non-ASCII or special
-characters) are compared in their quoted form, so a README at such a path may
-be mis-detected. ASCII paths — the overwhelming case — are exact.
+Known ceiling: paths containing control characters are still compared in git's
+quoted form and may be mis-detected. Non-ASCII paths (accents, CJK) are handled
+exactly — the detector reads git output with `core.quotePath=false`.
 
 This hook **detects drift and prompts an in-session refresh through the readmedaddy
 skill.** That is the whole contract. It does **not** edit your README, does not run

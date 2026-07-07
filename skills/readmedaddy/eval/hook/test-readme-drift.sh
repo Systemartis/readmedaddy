@@ -15,6 +15,10 @@ fi
 
 # Keep the test hermetic regardless of caller environment.
 unset README_DADDY_HOOK 2>/dev/null || true
+# ...including global/system git config (core.hooksPath, templates, etc.).
+GIT_CONFIG_GLOBAL=/dev/null
+GIT_CONFIG_SYSTEM=/dev/null
+export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 
 TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/rmd-hook.XXXXXX")
 PASS=0
@@ -158,10 +162,10 @@ printf '{"name":"x","v":2}\n' >"$d/package.json"
 (cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
 out=$( (cd "$d" && sh "$HOOK" --check) )
 rc=$?
-if [ "$rc" = 1 ] && [ ! -e "$d/.readmedaddy" ]; then
+if [ "$rc" = 1 ] && [ ! -e "$d/.readmedaddy" ] && [ ! -e "$d/.git/readmedaddy-state" ]; then
 	note ok "CHECK is idempotent and writes no cooldown state"
 else
-	note fail "CHECK second run expected rc=1 and no state dir (rc=$rc)"
+	note fail "CHECK second run expected rc=1 and no state anywhere (rc=$rc)"
 fi
 
 # (i2) HOOK mode keeps the working tree clean: cooldown state lives inside
@@ -263,6 +267,431 @@ if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'src/main.js'; then
 	note ok "CHECK catches rename out of a watched path"
 else
 	note fail "CHECK rename expected rc=1 naming src/main.js (rc=$rc, out: $out)"
+fi
+
+# --- modes and env overrides (characterization: current documented behavior) ---
+
+# (q) NOTIFY mode: stderr message, empty stdout, state recorded.
+# ONE invocation capturing both streams — notify records cooldown state, so a
+# second run would be silent on stderr and a two-invocation capture mis-fails.
+d=$(setup_repo)
+printf '{"hook":{"mode":"notify"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | sh "$HOOK" 2>"$d/.err.txt") )
+errout=$(cat "$d/.err.txt")
+if [ -z "$out" ] && printf '%s' "$errout" | grep -q 'readmedaddy:'; then
+	note ok "NOTIFY mode is stderr-only"
+else
+	note fail "NOTIFY expected empty stdout + stderr message (out: $out | err: $errout)"
+fi
+
+# (r) ENFORCE mode: blocks on every Stop (no cooldown recording).
+d=$(setup_repo)
+printf '{"hook":{"mode":"enforce"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out1=$(run_hook "$d" "$STDIN_CONT_FALSE")
+out2=$(run_hook "$d" "$STDIN_CONT_FALSE")
+enforce_ok=1
+case "$out1" in *'"decision":"block"'*) : ;; *) enforce_ok=0 ;; esac
+case "$out2" in *'"decision":"block"'*) : ;; *) enforce_ok=0 ;; esac
+if [ "$enforce_ok" = 1 ]; then
+	note ok "ENFORCE blocks on every Stop"
+else
+	note fail "ENFORCE expected block twice (got1: $out1 | got2: $out2)"
+fi
+
+# (s) ENV off: README_DADDY_HOOK=off silences hook mode even with drift.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | README_DADDY_HOOK=off sh "$HOOK") )
+if [ -z "$out" ]; then
+	note ok "ENV off silences hook mode"
+else
+	note fail "ENV off should be silent (got: $out)"
+fi
+
+# (t) ENV notify overrides config auto; --check ignores ENV off.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | README_DADDY_HOOK=notify sh "$HOOK" 2>/dev/null) )
+(cd "$d" && README_DADDY_HOOK=off sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ -z "$out" ] && [ "$rc" = 1 ]; then
+	note ok "ENV notify forces stderr-only; --check ignores ENV off"
+else
+	note fail "ENV override expected empty stdout + check rc=1 (out: $out, rc=$rc)"
+fi
+
+# --- A1: fresh-install seeding + per-HEAD cooldown ---
+
+# (u) FRESH-INSTALL: committed drift only, no state file -> silent, state seeded.
+# The drift commit gets a +60s committer date: %ct is second-granular and
+# committed_drift needs strictly-newer to register (see plan conventions).
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+60)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+60)) +0000" \
+	git -C "$d" commit -qam "bump manifest"              # committed drift, clean tree
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+if [ -z "$out" ] && [ -f "$d/.git/readmedaddy-state" ]; then
+	note ok "FRESH-INSTALL committed drift is seeded silently"
+else
+	note fail "FRESH-INSTALL expected silence + seeded state (got: $out)"
+fi
+
+# (v) POST-SEED: a NEW commit touching a watched file fires exactly once.
+printf '{"name":"x","v":3}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+120)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+120)) +0000" \
+	git -C "$d" commit -qam "bump again"
+out1=$(run_hook "$d" "$STDIN_CONT_FALSE")
+out2=$(run_hook "$d" "$STDIN_CONT_FALSE")
+seed_ok=1
+case "$out1" in *'"decision":"block"'*) : ;; *) seed_ok=0 ;; esac
+[ -n "$out2" ] && seed_ok=0
+if [ "$seed_ok" = 1 ]; then
+	note ok "POST-SEED new committed drift blocks once, then silent"
+else
+	note fail "POST-SEED expected block then silence (got1: $out1 | got2: $out2)"
+fi
+
+# (w) PER-HEAD: second dirty watched file at the same HEAD does NOT re-fire.
+d=$(setup_repo)
+mkdir -p "$d/src"
+printf 'a\n' >"$d/src/a.js"
+git -C "$d" add -A && git -C "$d" commit -qm src
+printf 'a2\n' >"$d/src/a.js"
+out1=$(run_hook "$d" "$STDIN_CONT_FALSE")
+printf 'b\n' >"$d/src/b.js"
+out2=$(run_hook "$d" "$STDIN_CONT_FALSE")
+perhead_ok=1
+case "$out1" in *'"decision":"block"'*) : ;; *) perhead_ok=0 ;; esac
+[ -n "$out2" ] && perhead_ok=0
+if [ "$perhead_ok" = 1 ]; then
+	note ok "PER-HEAD cooldown: new dirty file at same HEAD stays silent"
+else
+	note fail "PER-HEAD expected block then silence (got1: $out1 | got2: $out2)"
+fi
+
+# (x) ENFORCE is exempt from seeding: fresh repo, committed drift -> still blocks.
+d=$(setup_repo)
+printf '{"hook":{"mode":"enforce"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+60)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+60)) +0000" \
+	git -C "$d" commit -qam "bump manifest"
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+case "$out" in
+*'"decision":"block"'*) note ok "ENFORCE exempt from first-sight seeding" ;;
+*) note fail "ENFORCE fresh committed drift should block (got: $out)" ;;
+esac
+
+# (y) --check is unaffected by seeding: committed drift still exits 1.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+GIT_COMMITTER_DATE="@$(($(date +%s)+60)) +0000" GIT_AUTHOR_DATE="@$(($(date +%s)+60)) +0000" \
+	git -C "$d" commit -qam "bump manifest"
+(cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 1 ]; then
+	note ok "CHECK still reports committed drift (no seeding in check mode)"
+else
+	note fail "CHECK committed drift expected rc=1 (rc=$rc)"
+fi
+
+# (z) GLOB-NAMED FILE must not mask drift: untracked 'README.m?' expands to
+# README.md under pathname expansion and silences everything (the bug).
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+touch "$d/README.m?"
+out=$( (cd "$d" && sh "$HOOK" --check 2>/dev/null) )
+rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'package.json'; then
+	note ok "GLOB-NAMED file does not mask drift"
+else
+	note fail "GLOB-NAMED expected rc=1 naming package.json (rc=$rc, out: $out)"
+fi
+
+# (aa) NON-ASCII watched path matches in --range mode (quotePath off).
+d=$(setup_repo)
+mkdir -p "$d/src"
+naive="$d/src/na$(printf '\303\257')ve.js"
+printf 'x\n' >"$naive"
+git -C "$d" add -A && git -C "$d" commit -qm unicode
+base=$(git -C "$d" rev-parse HEAD)
+printf 'y\n' >"$naive"
+git -C "$d" commit -qam "bump unicode file"
+(cd "$d" && sh "$HOOK" --check --range "$base..HEAD" >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 1 ]; then
+	note ok "RANGE matches non-ASCII watched paths"
+else
+	note fail "RANGE non-ASCII expected rc=1 (rc=$rc)"
+fi
+
+# (ab) SHALLOW clone: clean-tree --check exits 2 loudly, never a silent 0.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+git -C "$d" commit -qam "bump manifest"
+shal=$(mktemp -d "$TMPROOT/shallow.XXXXXX")
+git clone -q --depth 1 "file://$d" "$shal/clone" 2>/dev/null
+(cd "$shal/clone" && sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "SHALLOW clean-tree --check exits 2"
+else
+	note fail "SHALLOW --check expected rc=2 (rc=$rc)"
+fi
+
+# (ac) NOT-A-REPO: --check outside git exits 2 (hook mode stays silent 0).
+d=$(mktemp -d "$TMPROOT/norepo.XXXXXX")
+printf 'readme\n' >"$d/README.md"
+(cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "CHECK outside a git repo exits 2"
+else
+	note fail "CHECK outside git expected rc=2 (rc=$rc)"
+fi
+
+# --- config schema v2: parser hardening ---
+
+# (ad) "mode":"off" disables the hook (today it BLOCKS — the worst fallback).
+d=$(setup_repo)
+printf '{"hook":{"mode":"off"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+if [ -z "$out" ]; then
+	note ok "mode:off disables the hook"
+else
+	note fail "mode:off should be silent (got: $out)"
+fi
+
+# (ae) Unknown mode degrades to notify + stderr warning, never to blocking.
+d=$(setup_repo)
+printf '{"hook":{"mode":"blokc"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | sh "$HOOK" 2>/dev/null) )
+errout=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | sh "$HOOK" 2>&1 >/dev/null) )
+if [ -z "$out" ] && printf '%s' "$errout" | grep -qi 'unknown mode'; then
+	note ok "unknown mode degrades to notify with a warning"
+else
+	note fail "unknown mode expected notify+warning (out: $out | err: $errout)"
+fi
+
+# (af) Keys OUTSIDE the hook object no longer corrupt parsing: a SIBLING
+# section's enabled:false must not disable the hook. (Today the greedy
+# whole-file sed reads it and silences the hook — this is the exact hazard
+# that blocks adding new config sections.)
+d=$(setup_repo)
+printf '{"hook":{"mode":"auto"},"future":{"enabled":false}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+case "$out" in
+*'"decision":"block"'*) note ok "sibling section's enabled:false is ignored" ;;
+*) note fail "sibling enabled:false must not disable the hook (got: $out)" ;;
+esac
+
+# --- --config FILE (base-ref config injection) ---
+
+# (ag) --config /dev/null ignores the working tree's enabled:false.
+d=$(setup_repo)
+printf '{"hook":{"enabled":false}}\n' >"$d/.readmedaddy.json"
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+(cd "$d" && sh "$HOOK" --check --config /dev/null >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 1 ]; then
+	note ok "--config /dev/null overrides working-tree config (defaults apply)"
+else
+	note fail "--config /dev/null expected rc=1 (rc=$rc)"
+fi
+
+# (ah) --config FILE uses that file's watch list, not the working tree's.
+d=$(setup_repo)
+mkdir -p "$d/docs"
+printf 'g\n' >"$d/docs/g.md" && git -C "$d" add -A && git -C "$d" commit -qm docs
+alt=$(mktemp "$TMPROOT/alt.XXXXXX")
+printf '{"hook":{"watch":["docs/*.md"]}}\n' >"$alt"
+printf 'g2\n' >"$d/docs/g.md"
+out=$( (cd "$d" && sh "$HOOK" --check --config "$alt" 2>/dev/null) )
+rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'docs/g.md'; then
+	note ok "--config FILE supplies the effective watch list"
+else
+	note fail "--config FILE expected rc=1 naming docs/g.md (rc=$rc, out: $out)"
+fi
+
+# (ai) --config without a value exits 2.
+d=$(setup_repo)
+(cd "$d" && sh "$HOOK" --check --config </dev/null >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "--config without a value exits 2"
+else
+	note fail "--config missing value expected rc=2 (rc=$rc)"
+fi
+
+# --- --print-config KEY ---
+
+# (aj) guard keys print configured values; unknown key exits 2.
+d=$(setup_repo)
+cat >"$d/.readmedaddy.json" <<'CFG'
+{"hook":{"mode":"notify"},"guard":{"pr":"fail","main":"issue","sweep":"weekly","autofix":{"runner":"claude","command":""}}}
+CFG
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+pc() { (cd "$d" && sh "$HOOK" --print-config "$1" 2>/dev/null); }
+v1=$(pc guard.pr); v2=$(pc guard.main); v3=$(pc guard.sweep)
+v4=$(pc guard.autofix.runner); v5=$(pc hook.mode)
+(cd "$d" && sh "$HOOK" --print-config guard.nope >/dev/null 2>&1); rcu=$?
+if [ "$v1 $v2 $v3 $v4 $v5" = "fail issue weekly claude notify" ] && [ "$rcu" = 2 ]; then
+	note ok "--print-config resolves guard + hook keys, unknown key exits 2"
+else
+	note fail "--print-config got: pr=$v1 main=$v2 sweep=$v3 runner=$v4 mode=$v5 rcu=$rcu"
+fi
+
+# (ak) defaults when no config exists.
+d=$(setup_repo)
+def=$( (cd "$d" && sh "$HOOK" --print-config guard.pr 2>/dev/null); (cd "$d" && sh "$HOOK" --print-config guard.main 2>/dev/null); (cd "$d" && sh "$HOOK" --print-config guard.autofix.runner 2>/dev/null) )
+if [ "$def" = "comment
+off
+off" ]; then
+	note ok "--print-config defaults: pr=comment, main=off, runner=off"
+else
+	note fail "--print-config defaults wrong (got: $def)"
+fi
+
+# (al) --print-config composes with --config FILE.
+d=$(setup_repo)
+alt=$(mktemp "$TMPROOT/alt.XXXXXX")
+printf '{"guard":{"pr":"off"}}\n' >"$alt"
+v=$( (cd "$d" && sh "$HOOK" --print-config guard.pr --config "$alt" 2>/dev/null) )
+if [ "$v" = off ]; then
+	note ok "--print-config honors --config"
+else
+	note fail "--print-config with --config expected 'off' (got: $v)"
+fi
+
+# --- --lint-config ---
+
+# (am) valid config lints clean (exit 0).
+d=$(setup_repo)
+cat >"$d/.readmedaddy.json" <<'CFG'
+{"hook":{"enabled":true,"mode":"auto","readme":"README.md","watch":["src/**"]},"guard":{"pr":"comment","main":"issue","sweep":"weekly","autofix":{"runner":"off","command":""}}}
+CFG
+(cd "$d" && sh "$HOOK" --lint-config >/dev/null 2>&1); rc=$?
+if [ "$rc" = 0 ]; then note ok "lint: valid config exits 0"; else note fail "lint valid expected 0 (rc=$rc)"; fi
+
+# (an) malformed JSON exits 1 (when python3 is present).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"hook":{' >"$d/.readmedaddy.json"
+	(cd "$d" && sh "$HOOK" --lint-config >/dev/null 2>&1); rc=$?
+	if [ "$rc" = 1 ]; then note ok "lint: malformed JSON exits 1"; else note fail "lint malformed expected 1 (rc=$rc)"; fi
+fi
+
+# (ao) bad enum exits 1 and names the key.
+d=$(setup_repo)
+printf '{"hook":{"mode":"blokc"}}\n' >"$d/.readmedaddy.json"
+errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'mode'; then
+	note ok "lint: bad enum exits 1 naming the key"
+else
+	note fail "lint bad enum expected 1 naming mode (rc=$rc, err: $errout)"
+fi
+
+# (ap) no config file exits 0 with a note.
+d=$(setup_repo)
+(cd "$d" && sh "$HOOK" --lint-config >/dev/null 2>&1); rc=$?
+if [ "$rc" = 0 ]; then note ok "lint: no config is fine (exit 0)"; else note fail "lint no-config expected 0 (rc=$rc)"; fi
+
+# (aq) unknown key exits 1 naming it (python3 machines).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"guard":{"prr":"fail"}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'prr'; then
+		note ok "lint: unknown key exits 1 naming it"
+	else
+		note fail "lint unknown key expected 1 naming prr (rc=$rc, err: $errout)"
+	fi
+fi
+
+# --- review-gate hardening (guard scoping, config sentinel, lint depth) ---
+
+# (ar) guard keys only read from the guard object: misnamed or junk sections
+# must not override (or invent) guard values.
+d=$(setup_repo)
+printf '{"x":{"pr":"fail"}}\n' >"$d/.readmedaddy.json"
+v1=$( (cd "$d" && sh "$HOOK" --print-config guard.pr 2>/dev/null) )
+printf '{"guard":{"pr":"comment"},"x":{"pr":"fail"}}\n' >"$d/.readmedaddy.json"
+v2=$( (cd "$d" && sh "$HOOK" --print-config guard.pr 2>/dev/null) )
+if [ "$v1" = comment ] && [ "$v2" = comment ]; then
+	note ok "guard extraction is scoped: junk sections cannot override"
+else
+	note fail "guard scoping expected comment/comment (got: $v1/$v2)"
+fi
+
+# (as) --config pointing at a MISSING file exits 2 (only /dev/null means defaults).
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+(cd "$d" && sh "$HOOK" --check --config /no/such/rmd-config.json >/dev/null 2>&1); rc1=$?
+(cd "$d" && sh "$HOOK" --lint-config --config /no/such/rmd-config.json >/dev/null 2>&1); rc2=$?
+if [ "$rc1" = 2 ] && [ "$rc2" = 2 ]; then
+	note ok "--config with a missing file exits 2 (no silent defaults)"
+else
+	note fail "--config missing file expected 2/2 (got: $rc1/$rc2)"
+fi
+
+# (at) lint flags braces inside hook string values (they break the sh parser).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"hook":{"watch":["src/{core,cli}/**"]}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'brace'; then
+		note ok "lint: braces in hook strings exit 1"
+	else
+		note fail "lint braces expected 1 naming braces (rc=$rc, err: $errout)"
+	fi
+fi
+
+# (au) lint flags a double-quote inside autofix.command (sh parser truncates it).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"guard":{"autofix":{"runner":"command","command":"mycli --prompt \\"fix\\" --yes"}}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'command'; then
+		note ok "lint: quotes in autofix.command exit 1"
+	else
+		note fail "lint command-quote expected 1 (rc=$rc, err: $errout)"
+	fi
+fi
+
+# (av) lint flags wrong types: "enabled":"false" (string) must not lint clean.
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"hook":{"enabled":"false"}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'enabled'; then
+		note ok "lint: string enabled exits 1 naming the key"
+	else
+		note fail "lint type-check expected 1 naming enabled (rc=$rc, err: $errout)"
+	fi
+fi
+
+# (aw) --print-config --raw: raw value when present, EMPTY when absent (no
+# default substitution) — presence becomes observable through the one parser.
+d=$(setup_repo)
+printf '{"guard":{"pr":"fail"}}\n' >"$d/.readmedaddy.json"
+v1=$( (cd "$d" && sh "$HOOK" --print-config guard.pr --raw 2>/dev/null) ); rc1=$?
+rm "$d/.readmedaddy.json"
+v2=$( (cd "$d" && sh "$HOOK" --print-config guard.pr --raw 2>/dev/null) ); rc2=$?
+if [ "$v1" = fail ] && [ -z "$v2" ] && [ "$rc1" = 0 ] && [ "$rc2" = 0 ]; then
+	note ok "--raw prints value when present, empty when absent"
+else
+	note fail "--raw expected fail/<empty> rc 0/0 (got: '$v1'/'$v2' rc $rc1/$rc2)"
 fi
 
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"

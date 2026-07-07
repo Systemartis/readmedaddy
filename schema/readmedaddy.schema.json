@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Systemartis/readmedaddy/main/schema/readmedaddy.schema.json",
+  "title": ".readmedaddy.json",
+  "description": "Per-repo configuration for readmedaddy: the readme-drift hook/detector and the CI guard. Every key is optional; omit a key to keep its default.",
+  "type": "object",
+  "properties": {
+    "hook": {
+      "type": "object",
+      "description": "The drift detector: Claude Code Stop hook and standalone --check.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "false turns the detector off for this repo (all surfaces)."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["auto", "notify", "enforce", "off"],
+          "default": "auto",
+          "description": "Stop-hook insistence. auto: one nudge per drift event. notify: stderr only. enforce: every Stop until the README moves. off: hook disabled (--check unaffected)."
+        },
+        "readme": {
+          "type": "string",
+          "default": "README.md",
+          "description": "Path (relative to repo root) of the README the detector watches."
+        },
+        "watch": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Patterns whose changes imply README drift: exact paths, dir/** (prefix), **/name (suffix), or plain globs like docs/*.md."
+        }
+      },
+      "additionalProperties": false
+    },
+    "guard": {
+      "type": "object",
+      "description": "CI guard behavior (consumed by the GitHub Action from v0.3.0).",
+      "properties": {
+        "pr": {
+          "type": "string",
+          "enum": ["off", "comment", "fail"],
+          "default": "comment",
+          "description": "Pull-request response: sticky advisory comment, failing check, or nothing."
+        },
+        "main": {
+          "type": "string",
+          "enum": ["off", "issue", "fail"],
+          "default": "off",
+          "description": "Default-branch push response: pinned dashboard issue, failing job, or nothing."
+        },
+        "sweep": {
+          "type": "string",
+          "enum": ["off", "weekly"],
+          "default": "off",
+          "description": "Scheduled freshness sweep; reports into the same dashboard issue."
+        },
+        "autofix": {
+          "type": "object",
+          "description": "Opt-in tier 3: an agent refreshes the README and opens a fix PR. Costs LLM tokens; requires an API-key secret.",
+          "properties": {
+            "runner": {
+              "type": "string",
+              "enum": ["off", "claude", "command"],
+              "default": "off",
+              "description": "off: no auto-fix. claude: anthropics/claude-code-action. command: run guard.autofix.command verbatim as the agent step."
+            },
+            "command": {
+              "type": "string",
+              "default": "",
+              "description": "Agent CLI invocation used when runner is \"command\". Contract: edit the working tree only — no commit, no push, no PR."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -15,7 +15,7 @@
 
 [![ci](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version](https://img.shields.io/badge/version-0.2.1-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
 [![Agent Skill](https://img.shields.io/badge/Claude%20Code-Agent%20Skill-8A2BE2.svg)](https://agentskills.io)
 
 **A [Claude Code](https://claude.ai/code) [Agent Skill](https://agentskills.io) that writes the README your repo deserves — and earns its score instead of asserting it.**
@@ -207,7 +207,22 @@ cd readmedaddy && ./install.sh
 | **Cursor, Codex, Gemini CLI, Zed**, anything that reads `AGENTS.md` | vendor `skills/readmedaddy/` into the repo and add one line to `AGENTS.md`: *"When asked to write or improve a README, follow `skills/readmedaddy/SKILL.md`."* |
 | **Any other agent** | `DEST=/path ./install.sh` — the skill is plain Markdown; any agent that can read files can follow it |
 
-`./install.sh` copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with `--no-hook`; remove it later with `python3 scripts/install-hook.py --uninstall`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and (Claude Code only) your `settings.json`, and is safe to re-run.
+`./install.sh` copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with `--no-hook`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and (Claude Code only) your `settings.json`, and is safe to re-run.
+
+**Uninstall — one command, complete removal:** `./install.sh --uninstall` deletes every installed skill copy and removes the Stop-hook entry from your `settings.json`, printing each path it touches. Nothing else on the machine is affected.
+
+**Claude Code plugin (alternative install):** the repo is also a plugin — `/plugin marketplace add Systemartis/readmedaddy`, then `/plugin install readmedaddy@readmedaddy`. The Stop hook ships inside the plugin (your `settings.json` is never edited) and `/plugin uninstall` removes everything cleanly. If you previously ran `./install.sh`, run `./install.sh --uninstall` first — having both registers the hook twice.
+
+## Guard a repo (init wizard)
+
+One command configures the whole system — drift hook, CI gate on PRs and merge queues, merge-to-main dashboard, weekly sweep, badge:
+
+```sh
+python3 scripts/readmedaddy-init.py          # interactive: ≤6 questions, Enter = detected default
+python3 scripts/readmedaddy-init.py --yes    # the recommended preset, zero questions
+```
+
+Or ask your agent: *"readmedaddy init"*. Every question has a flag (see `--help`), re-running reconfigures without clobbering hand edits, and nothing is written before the preview. To make the check **required** (drifting PRs cannot merge), the wizard prints the exact rulesets recipe — start with `enforcement: evaluate` to dry-run it. Teams can also pin the local tier through version control: a project `.claude/settings.json` with `extraKnownMarketplaces` + `enabledPlugins: {"readmedaddy@readmedaddy": true}` gives every Claude Code teammate the Stop hook automatically.
 
 ## Local-only by design
 
@@ -233,7 +248,9 @@ It is deliberately quiet. No git repo, no README, or a config that turns it off,
 | **notify** | Prints the same message to stderr and gets out of the way — awareness without a handoff. |
 | **enforce** | Re-prompts on every Stop until the README actually changes — for projects with a hard "README tracks code" rule. |
 
-Configure it per project with a `.readmedaddy.json` (mode, the watched README, the watch list), or force a mode for one session with `README_DADDY_HOOK=notify|enforce|off`. Disable it entirely with `README_DADDY_HOOK=off`. Full behavior, the drift logic, and the loop-safety guards are in [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md).
+A fourth value, `"off"`, disables the Stop hook for the repo; the standalone `--check` still runs (use `"enabled": false` to turn off every surface).
+
+Configure it per project with a `.readmedaddy.json` (mode, the watched README, the watch list), or force a mode for one session with `README_DADDY_HOOK=auto|notify|enforce`, or disable it for the session with `README_DADDY_HOOK=off`. Full behavior, the drift logic, and the loop-safety guards are in [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md).
 
 ### The same detector, anywhere — no agent required
 
@@ -244,7 +261,7 @@ skills/readmedaddy/hooks/readme-drift.sh --check                             # w
 skills/readmedaddy/hooks/readme-drift.sh --check --range origin/main...HEAD  # commit range
 ```
 
-Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = bad range. `--check` writes no state, ignores the session-scoped `README_DADDY_HOOK` switch, and respects a project's `enabled: false`. Two ready-made wirings:
+Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = loud config/usage error (bad range, not a git repo, shallow clone — a misconfigured CI gate can never pass silently green). `--check` writes no state, ignores the session-scoped `README_DADDY_HOOK` switch, and respects a project's `enabled: false`. Three sibling flags round out the config story: `--config FILE` runs against an explicit config (CI passes the PR *base ref's* copy, so a PR cannot waive its own gate), `--print-config KEY` reads resolved values through the same parser, and `--lint-config` validates the file — types, enums, unknown keys — instead of letting a typo silently resolve to defaults. Two ready-made wirings:
 
 **Git pre-commit warning** (works for every agent and every human — warns, never blocks):
 
@@ -256,16 +273,21 @@ Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = bad ran
 **Pull-request gate** with the bundled GitHub Action ([`action.yml`](action.yml)) — catches drift from contributors who use no agent at all:
 
 ```yaml
-on: pull_request
+# .github/workflows/readme-drift.yml
+name: readme drift
+on: [pull_request, merge_group]     # merge_group: required checks never stall a queue
 permissions: { contents: read, pull-requests: write }
-steps:
-  - uses: actions/checkout@v4
-    with: { fetch-depth: 0 }        # the range diff needs the merge-base
-  - uses: Systemartis/readmedaddy@v0.2.0
-    with: { mode: comment }         # one sticky PR comment; 'fail' = required check
+jobs:
+  readme-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }    # the range diff needs the merge-base
+      - uses: Systemartis/readmedaddy@v0
+        with: { mode: comment }     # one sticky PR comment; 'fail' = required check
 ```
 
-In `comment` mode it posts (and thereafter updates) a single PR comment naming the drifted files; in `fail` mode it fails the job and makes no API calls at all. This repo runs the same action on its own PRs. LLM-scored merge gates are deliberately not offered — judge scores wobble between passes, so scoring stays advisory.
+In `comment` mode it posts (and thereafter updates) a single PR comment naming the drifted files — and **resolves it** when a later push fixes the drift; in `fail` mode it fails the job and makes no API calls at all. The same action also watches **merge queues**, **pushes to the default branch** (drift lands in one pinned README-health dashboard issue, never issue-per-event), and a **weekly sweep** — all configured from `.readmedaddy.json`'s `guard` section, which the [init wizard](#guard-a-repo-init-wizard) writes for you. On PR-class events the config is read from the base ref, so the gate's rules can only change by merging them. This repo runs the same action on its own PRs. LLM-scored merge gates are deliberately not offered — judge scores wobble between passes, so scoring stays advisory. The only LLM surface is the explicitly opt-in `@readmedaddy fix` comment command, which never detects (that stays free and local) — it only writes the fix, as a PR a human reviews.
 
 ## Usage and triggers
 

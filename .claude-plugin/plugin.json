@@ -1,0 +1,10 @@
+{
+  "name": "readmedaddy",
+  "version": "0.3.0",
+  "description": "READMEs that earn their front page: archetype-aware generation with multi-gate ranking, plus a zero-network drift detector that keeps them fresh. Installing this plugin registers the readme-drift Stop hook automatically; /plugin uninstall removes it cleanly.",
+  "author": {
+    "name": "Systemartis"
+  },
+  "homepage": "https://github.com/Systemartis/readmedaddy",
+  "license": "MIT"
+}

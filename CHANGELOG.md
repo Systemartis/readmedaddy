@@ -4,6 +4,89 @@ All notable changes to readmedaddy are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-08
+
+The guard release: one wizard configures every drift surface — session-end
+hook, PR gate, merge queue, merge-to-main dashboard, weekly sweep — plus an
+explicitly opt-in LLM fix tier. Detection stays pure local git on every
+surface.
+
+### Added
+
+- **The action handles every drift surface**: pull requests (as before),
+  **merge queues** (payload-SHA range, always reports so required checks never
+  stall a queue), **pushes to the default branch**, and **scheduled sweeps** —
+  configured from `.readmedaddy.json`'s `guard` section. PR-class events read
+  the config from the **base ref** (never the PR head, which cannot waive its
+  own gate); a `guard.pr` value wins over the legacy `mode:` input.
+- **README-health dashboard issue**: push/sweep drift maintains ONE pinned
+  issue updated in place — never issue-per-event. Sticky PR comments now
+  **resolve themselves** when a later push fixes the drift.
+- **`readmedaddy-init.py` — the guard wizard**: detect-then-confirm setup
+  (README path, watch list, nudge mode, CI gate, badge, hook registration) in
+  at most six questions, every one pre-answered from repo evidence. Every
+  question has a flag; `--yes` applies the recommended preset; `--print`
+  previews without writing; re-running reconfigures without clobbering hand
+  edits. Zero network. `--selftest` proves the contracts.
+- **SKILL.md `init` section**: agents drive the same wizard conversationally
+  (≤3 questions) through `--print` + flags — one serializer for every face.
+- **`install.sh --uninstall`**: one command removes every installed artifact
+  (all skill copies + the settings.json hook entry) and prints each path it
+  touches. Hook registration now degrades gracefully when python3 is absent.
+- **This repo guards itself**: a root `.readmedaddy.json` watches the action,
+  schema, scripts, and skill sources; CI runs the drift gate on PRs and merge
+  queues, and the shell/python jobs run on ubuntu **and macOS**.
+- **`--print-config KEY --raw`**: presence-aware config reads (empty when
+  absent) so consumers can implement config-over-input precedence without
+  grep.
+- **Tier 3, opt-in: `@readmedaddy fix`** — when `guard.autofix.runner` is set,
+  the wizard writes `readmedaddy-fix.yml`: comment `@readmedaddy fix` on a PR
+  and an agent refreshes the README and opens a fix-up PR for review. The
+  drift check stays free and local; only the fix step talks to a model.
+  Security rails baked in: write-access verified against the collaborators API
+  **before any checkout**, fork PRs refused, the audited head SHA pinned, the
+  readmedaddy distribution checkout scrubbed before the PR step, and
+  `add-paths` scoped so a fix PR can only ever carry the README. The agent
+  step is one swappable block — Claude is the tested default,
+  `runner: command` substitutes any CLI with the same contract.
+- **Claude Code plugin packaging**: `/plugin marketplace add
+  Systemartis/readmedaddy` — the Stop hook ships inside the plugin
+  (settings.json never edited; `/plugin uninstall` removes everything).
+  Teams pin it through version control via `enabledPlugins`.
+- **Enforcement recipe**: the wizard prints the exact rulesets API call
+  (additive, `evaluate` dry-run first) to make the drift check a required
+  status check; documented alongside team pinning in the README.
+
+- **Config schema v2**: a `guard` section (`pr`, `main`, `sweep`,
+  `autofix.runner`, `autofix.command`) with collision-safe key names, consumed
+  by the GitHub Action from v0.3.0. A published JSON Schema
+  (`schema/readmedaddy.schema.json`) gives editors validation via `$schema`.
+- **`--config FILE`**: run the detector against an explicit config (CI gates
+  pass the PR base ref's copy — a PR can no longer waive its own gate;
+  `/dev/null` = pure defaults).
+- **`--print-config KEY`**: resolved config values through the one hardened
+  parser, for workflows and scripts.
+- **`--lint-config`**: JSON well-formedness + unknown-key detection (python3,
+  stdlib only) and enum validation (pure sh), exit 0/1/2.
+
+### Fixed
+
+- **Fresh installs no longer open with a nag**: the Stop hook seeds its cooldown
+  on first sight of a repo whose staleness predates the install, and the
+  cooldown is keyed per HEAD + drift class — one nudge per drift event, not one
+  per newly-touched file. `enforce` mode is exempt by design.
+- **Glob-named files can no longer mask drift** (pathname expansion disabled
+  around the status/range loops).
+- **Non-ASCII watched paths** now match in `--check --range` mode
+  (`core.quotePath=false`).
+- **`--check` fails loudly (exit 2)** outside a git repo and on shallow clones
+  where committed-drift comparison would be meaningless — a misconfigured CI
+  gate can no longer pass silently green.
+- **References no longer instruct live web checks** — every G2/G7 verification
+  step is offline-checkable, matching SKILL.md's operate-offline mandate.
+- **README's PR-gate snippet is a complete, valid workflow** pinned to the
+  moving `@v0` tag; `validate-skill.py` now fails CI on stale action pins.
+
 ## [0.2.1] - 2026-07-02
 
 Fixes from an adversarial deep-dive review (every finding below was confirmed

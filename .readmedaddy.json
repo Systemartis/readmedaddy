@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Systemartis/readmedaddy/main/schema/readmedaddy.schema.json",
+  "hook": {
+    "enabled": true,
+    "mode": "auto",
+    "readme": "README.md",
+    "watch": [
+      "action.yml",
+      "install.sh",
+      "schema/**",
+      "scripts/**",
+      ".github/workflows/**",
+      "skills/readmedaddy/SKILL.md",
+      "skills/readmedaddy/hooks/**",
+      "skills/readmedaddy/references/**"
+    ]
+  },
+  "guard": {
+    "pr": "comment",
+    "main": "off",
+    "sweep": "off",
+    "autofix": { "runner": "off", "command": "" }
+  }
+}

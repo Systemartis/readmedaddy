@@ -15,7 +15,7 @@
 #                      session-scoped README_DADDY_HOOK env switch.
 #
 # Everything here is local git + POSIX sh: no network, no telemetry, and no
-# writes outside .readmedaddy/state (hook-mode cooldown only).
+# writes outside .git/readmedaddy-state (hook-mode cooldown only).
 # POSIX sh, shellcheck-clean. No bashisms.
 
 # Default set of README-relevant signal paths (baked in; overridable via
@@ -44,6 +44,12 @@ docker-compose.yml
 CHECK_MODE=0
 RANGE=
 RANGE_SET=0
+CONFIG_OVERRIDE=
+CONFIG_SET=0
+PRINT_MODE=0
+PRINT_KEY=
+LINT_MODE=0
+RAW_MODE=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--check) CHECK_MODE=1 ;;
@@ -56,6 +62,26 @@ while [ $# -gt 0 ]; do
 		RANGE=${1#--range=}
 		RANGE_SET=1
 		;;
+	--config)
+		shift
+		CONFIG_OVERRIDE=${1:-}
+		CONFIG_SET=1
+		;;
+	--config=*)
+		CONFIG_OVERRIDE=${1#--config=}
+		CONFIG_SET=1
+		;;
+	--print-config)
+		shift
+		PRINT_KEY=${1:-}
+		PRINT_MODE=1
+		;;
+	--print-config=*)
+		PRINT_KEY=${1#--print-config=}
+		PRINT_MODE=1
+		;;
+	--lint-config) LINT_MODE=1 ;;
+	--raw) RAW_MODE=1 ;;
 	*)
 		# A typo'd flag must never pass silently green (e.g. --chekc falling
 		# through to hook mode and exiting 0 in a CI gate). Loud, always.
@@ -73,8 +99,28 @@ if [ "$CHECK_MODE" = 1 ] && [ "$RANGE_SET" = 1 ] && [ -z "$RANGE" ]; then
 	printf 'readmedaddy --check: --range requires a value (e.g. origin/main...HEAD)\n' >&2
 	exit 2
 fi
+if [ "$CONFIG_SET" = 1 ] && [ -z "$CONFIG_OVERRIDE" ]; then
+	printf 'readmedaddy: --config requires a file path (use /dev/null for pure defaults)\n' >&2
+	exit 2
+fi
+if [ "$PRINT_MODE" = 1 ] && [ -z "$PRINT_KEY" ]; then
+	printf 'readmedaddy: --print-config requires a key (e.g. guard.pr)\n' >&2
+	exit 2
+fi
+if [ "$PRINT_MODE" = 1 ] && [ "$CHECK_MODE" = 1 ]; then
+	printf 'readmedaddy: --print-config and --check are mutually exclusive\n' >&2
+	exit 2
+fi
+if [ "$LINT_MODE" = 1 ] && { [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ]; }; then
+	printf 'readmedaddy: --lint-config runs alone (not with --check/--print-config)\n' >&2
+	exit 2
+fi
+if [ "$RAW_MODE" = 1 ] && [ "$PRINT_MODE" = 0 ]; then
+	printf 'readmedaddy: --raw only modifies --print-config\n' >&2
+	exit 2
+fi
 
-if [ "$CHECK_MODE" = 0 ]; then
+if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
 	# (a) Read all of stdin.
 	stdin_data=$(cat 2>/dev/null)
 
@@ -92,27 +138,73 @@ fi
 # (d) Resolve repo root from the hook's CWD.
 root=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$root" ]; then
-	exit 0
+	if { [ "$PRINT_MODE" = 1 ] || [ "$LINT_MODE" = 1 ]; } && [ "$CONFIG_SET" = 1 ]; then
+		: # print/lint with an explicit --config needs no repo
+	elif [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ] || [ "$LINT_MODE" = 1 ]; then
+		printf 'readmedaddy: not inside a git repository (missing actions/checkout?)\n' >&2
+		exit 2
+	else
+		exit 0
+	fi
 fi
 
-# (e) Optional config: .readmedaddy.json
-config=$root/.readmedaddy.json
+# (e) Optional config: .readmedaddy.json (or an explicit --config FILE —
+# CI gates pass the base ref's copy so a PR cannot waive its own gate;
+# /dev/null is the defaults-only sentinel and fails the -f test below).
+if [ "$CONFIG_SET" = 1 ]; then
+	config=$CONFIG_OVERRIDE
+	# Only the literal /dev/null sentinel means "defaults on purpose". Any other
+	# missing path is a broken extraction step or a typo — a CI gate silently
+	# flipping to defaults is exactly the failure --config exists to prevent.
+	if [ "$config" != /dev/null ] && [ ! -f "$config" ]; then
+		printf 'readmedaddy: --config %s is not a regular file (use /dev/null for pure defaults)\n' "$config" >&2
+		exit 2
+	fi
+else
+	config=$root/.readmedaddy.json
+fi
 cfg_mode=
 cfg_readme=
 cfg_watch=
+en=
+cfg_guard_pr=
+cfg_guard_main=
+cfg_guard_sweep=
+cfg_guard_runner=
+cfg_guard_command=
 if [ -f "$config" ]; then
 	cfg=$(tr -d '\n' <"$config" 2>/dev/null)
-	case "$cfg" in
+	# Scope extraction to the hook object: everything from `"hook" : {` to the
+	# first `}`. The hook object holds only scalars and one array, so the first
+	# closing brace ends it. Falls back to whole-file scan when no hook object
+	# exists (historical configs).
+	cfg_hook=$(printf '%s' "$cfg" | sed -n 's/.*"hook"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+	if [ -z "$cfg_hook" ]; then
+		cfg_hook=$cfg
+	fi
+	case "$cfg_hook" in
 	*'"enabled"'*)
-		en=$(printf '%s' "$cfg" | sed -n 's/.*"enabled"[[:space:]]*:[[:space:]]*\([A-Za-z]*\).*/\1/p')
-		if [ "$en" = false ]; then
+		en=$(printf '%s' "$cfg_hook" | sed -n 's/.*"enabled"[[:space:]]*:[[:space:]]*\([A-Za-z]*\).*/\1/p')
+		# Print/lint modes report on config; they never gate.
+		if [ "$en" = false ] && [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
 			exit 0
 		fi
 		;;
 	esac
-	cfg_mode=$(printf '%s' "$cfg" | sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_readme=$(printf '%s' "$cfg" | sed -n 's/.*"readme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_watch=$(printf '%s' "$cfg" | sed -n 's/.*"watch"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')
+	cfg_mode=$(printf '%s' "$cfg_hook" | sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_readme=$(printf '%s' "$cfg_hook" | sed -n 's/.*"readme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_watch=$(printf '%s' "$cfg_hook" | sed -n 's/.*"watch"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')
+	# guard.* extraction is scoped like hook: pull the autofix object out first
+	# (it is flat), strip it, then the remaining guard object is flat too.
+	# Keys in other sections can neither override nor invent guard values.
+	cfg_autofix=$(printf '%s' "$cfg" | sed -n 's/.*"autofix"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+	cfg_noaf=$(printf '%s' "$cfg" | sed 's/"autofix"[[:space:]]*:[[:space:]]*{[^}]*}//')
+	cfg_guard=$(printf '%s' "$cfg_noaf" | sed -n 's/.*"guard"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+	cfg_guard_pr=$(printf '%s' "$cfg_guard" | sed -n 's/.*"pr"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_main=$(printf '%s' "$cfg_guard" | sed -n 's/.*"main"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_sweep=$(printf '%s' "$cfg_guard" | sed -n 's/.*"sweep"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_runner=$(printf '%s' "$cfg_autofix" | sed -n 's/.*"runner"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_command=$(printf '%s' "$cfg_autofix" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 fi
 
 # README path (relative to root).
@@ -139,6 +231,170 @@ fi
 case "${README_DADDY_HOOK:-}" in
 notify | auto | enforce) mode=$README_DADDY_HOOK ;;
 esac
+case "$mode" in
+auto | notify | enforce) ;;
+off)
+	# "off" is a natural guess and must mean what it says (hook mode only;
+	# --check has its own contract and ignores mode, print/lint never gate).
+	if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
+		exit 0
+	fi
+	;;
+*)
+	# Warn on the surfaces that ACT on mode; lint reports it in its own words.
+	if [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
+		printf 'readmedaddy: unknown mode "%s" in .readmedaddy.json — treating as notify (valid: auto|notify|enforce|off)\n' "$mode" >&2
+	fi
+	mode=notify
+	;;
+esac
+
+# --print-config KEY: resolved config values through this one parser, for the
+# GitHub Action and scripts. Reports the RAW configured value (defaults when
+# absent) — it never gates, never validates. Lint with --lint-config.
+if [ "$PRINT_MODE" = 1 ]; then
+	# --raw: the configured value verbatim, EMPTY when absent — presence is
+	# observable, so consumers can implement config-wins-over-input precedence.
+	if [ "$RAW_MODE" = 1 ]; then
+		case "$PRINT_KEY" in
+		hook.enabled) printf '%s\n' "$en" ;;
+		hook.mode) printf '%s\n' "$cfg_mode" ;;
+		hook.readme) printf '%s\n' "$cfg_readme" ;;
+		guard.pr) printf '%s\n' "$cfg_guard_pr" ;;
+		guard.main) printf '%s\n' "$cfg_guard_main" ;;
+		guard.sweep) printf '%s\n' "$cfg_guard_sweep" ;;
+		guard.autofix.runner) printf '%s\n' "$cfg_guard_runner" ;;
+		guard.autofix.command) printf '%s\n' "$cfg_guard_command" ;;
+		*)
+			printf 'readmedaddy --print-config: unknown key: %s\n' "$PRINT_KEY" >&2
+			exit 2
+			;;
+		esac
+		exit 0
+	fi
+	case "$PRINT_KEY" in
+	hook.enabled) printf '%s\n' "${en:-true}" ;;
+	hook.mode) printf '%s\n' "${cfg_mode:-auto}" ;;
+	hook.readme) printf '%s\n' "${cfg_readme:-README.md}" ;;
+	guard.pr) printf '%s\n' "${cfg_guard_pr:-comment}" ;;
+	guard.main) printf '%s\n' "${cfg_guard_main:-off}" ;;
+	guard.sweep) printf '%s\n' "${cfg_guard_sweep:-off}" ;;
+	guard.autofix.runner) printf '%s\n' "${cfg_guard_runner:-off}" ;;
+	guard.autofix.command) printf '%s\n' "$cfg_guard_command" ;;
+	*)
+		printf 'readmedaddy --print-config: unknown key: %s\n' "$PRINT_KEY" >&2
+		exit 2
+		;;
+	esac
+	exit 0
+fi
+
+# --lint-config: validate the config file. Exit 0 = valid (or nothing to
+# lint), 1 = problems (findings on stderr), 2 = usage error. JSON
+# well-formedness and unknown-key detection need python3 (stdlib json only —
+# still zero network); without it, enum checks still run.
+if [ "$LINT_MODE" = 1 ]; then
+	if [ ! -f "$config" ]; then
+		printf 'readmedaddy --lint-config: no config at %s — nothing to lint.\n' "$config" >&2
+		exit 0
+	fi
+	lint_fail=0
+	if command -v python3 >/dev/null 2>&1; then
+		if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$config" 2>/dev/null; then
+			printf 'readmedaddy --lint-config: %s is not valid JSON\n' "$config" >&2
+			lint_fail=1
+		fi
+	else
+		printf 'readmedaddy --lint-config: python3 not found — skipping JSON well-formedness, checking enums only\n' >&2
+	fi
+	lint_enum() {
+		le_key=$1
+		le_val=$2
+		le_allowed=$3
+		if [ -z "$le_val" ]; then
+			return 0
+		fi
+		case " $le_allowed " in
+		*" $le_val "*) return 0 ;;
+		esac
+		printf 'readmedaddy --lint-config: %s: "%s" is not one of: %s\n' "$le_key" "$le_val" "$le_allowed" >&2
+		lint_fail=1
+		return 0
+	}
+	lint_enum hook.mode "$cfg_mode" "auto notify enforce off"
+	lint_enum guard.pr "$cfg_guard_pr" "off comment fail"
+	lint_enum guard.main "$cfg_guard_main" "off issue fail"
+	lint_enum guard.sweep "$cfg_guard_sweep" "off weekly"
+	lint_enum guard.autofix.runner "$cfg_guard_runner" "off claude command"
+	# Known-key walk: a typo'd key must not lint clean. python3 only — the sh
+	# parser can't enumerate keys; the degraded path already warned above.
+	if command -v python3 >/dev/null 2>&1; then
+		if ! python3 - "$config" <<'PYEOF' >&2; then
+import json, sys
+KNOWN = {
+    "": {"$schema", "hook", "guard", "_README"},
+    "hook": {"enabled", "mode", "readme", "watch"},
+    "guard": {"pr", "main", "sweep", "autofix"},
+    "guard.autofix": {"runner", "command"},
+}
+TYPES = {
+    "hook.enabled": bool, "hook.mode": str, "hook.readme": str,
+    "hook.watch": list, "guard.pr": str, "guard.main": str,
+    "guard.sweep": str, "guard.autofix.runner": str,
+    "guard.autofix.command": str,
+}
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)  # well-formedness already reported above
+bad = []
+def walk(obj, path):
+    if not isinstance(obj, dict):
+        return
+    allowed = KNOWN.get(path)
+    if allowed is None:
+        return
+    for k, v in obj.items():
+        key = f"{path + '.' if path else ''}{k}"
+        if k not in allowed:
+            bad.append(f"unknown key: {key}")
+            continue
+        want = TYPES.get(key)
+        if want and not isinstance(v, want):
+            bad.append(
+                f"{key}: expected {want.__name__}, got {type(v).__name__}"
+                f" ({v!r})"
+            )
+            continue
+        walk(v, key)
+walk(cfg, "")
+# The sh parser cannot cross braces or escaped quotes inside strings; a value
+# it would misread must fail lint, not silently resolve to defaults.
+hook = cfg.get("hook", {})
+if isinstance(hook, dict):
+    for k, v in hook.items():
+        for item in (v if isinstance(v, list) else [v]):
+            if isinstance(item, str) and ("{" in item or "}" in item):
+                bad.append(f"hook.{k}: braces in string values break the sh parser: {item!r}")
+autofix = cfg.get("guard", {})
+autofix = autofix.get("autofix", {}) if isinstance(autofix, dict) else {}
+if isinstance(autofix, dict):
+    cmd = autofix.get("command")
+    if isinstance(cmd, str) and ('"' in cmd or "{" in cmd or "}" in cmd):
+        bad.append("guard.autofix.command: quotes/braces in the value break the sh parser — keep the command quote-free or wrap it in a script")
+for b in bad:
+    print(f"readmedaddy --lint-config: {b}")
+sys.exit(1 if bad else 0)
+PYEOF
+			lint_fail=1
+		fi
+	fi
+	if [ "$lint_fail" = 1 ]; then
+		exit 1
+	fi
+	printf 'readmedaddy --lint-config: %s OK\n' "$config"
+	exit 0
+fi
 
 # (f) No README -> do not nag.
 if [ ! -f "$root/$readme_path" ]; then
@@ -149,6 +405,9 @@ fi
 match_watch() {
 	mw_path=$1
 	mw_old=$IFS
+	# Save the caller's noglob state: restoring blindly with `set +f` would
+	# re-enable pathname expansion mid-loop for callers that turned it off.
+	case $- in *f*) mw_had_f=1 ;; *) mw_had_f=0 ;; esac
 	set -f
 	IFS='
 '
@@ -163,7 +422,7 @@ match_watch() {
 			case "$mw_path" in
 			"$mw_pre" | "$mw_pre"/*)
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -173,7 +432,7 @@ match_watch() {
 			case "$mw_path" in
 			"$mw_suf" | */"$mw_suf")
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -183,7 +442,7 @@ match_watch() {
 			case "$mw_path" in
 			"$mw_pre"*)
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -195,7 +454,7 @@ match_watch() {
 			case "$mw_path" in
 			$mw_pat)
 				IFS=$mw_old
-				set +f
+				if [ "$mw_had_f" = 0 ]; then set +f; fi
 				return 0
 				;;
 			esac
@@ -203,27 +462,28 @@ match_watch() {
 		esac
 	done
 	IFS=$mw_old
-	set +f
+	if [ "$mw_had_f" = 0 ]; then set +f; fi
 	return 1
 }
 
 # Best-effort committed drift: newest commit touching a watched path is newer
 # than the newest commit touching the README. Prints changed file names if so.
 committed_drift() {
-	cd_readme_ct=$(git -C "$root" log -1 --format=%ct -- "$readme_path" 2>/dev/null)
+	cd_readme_ct=$(git -C "$root" -c core.quotePath=false log -1 --format=%ct -- "$readme_path" 2>/dev/null)
 	if [ -z "$cd_readme_ct" ]; then
 		return 0
 	fi
 	cd_old=$IFS
+	case $- in *f*) cd_had_f=1 ;; *) cd_had_f=0 ;; esac
 	set -f
 	IFS='
 '
 	# shellcheck disable=SC2086
-	cd_watched_ct=$(git -C "$root" log -1 --format=%ct -- $watch_list 2>/dev/null)
+	cd_watched_ct=$(git -C "$root" -c core.quotePath=false log -1 --format=%ct -- $watch_list 2>/dev/null)
 	# shellcheck disable=SC2086
-	cd_files=$(git -C "$root" log -1 --name-only --format= -- $watch_list 2>/dev/null)
+	cd_files=$(git -C "$root" -c core.quotePath=false log -1 --name-only --format= -- $watch_list 2>/dev/null)
 	IFS=$cd_old
-	set +f
+	if [ "$cd_had_f" = 0 ]; then set +f; fi
 	if [ -z "$cd_watched_ct" ]; then
 		return 0
 	fi
@@ -236,7 +496,7 @@ committed_drift() {
 # Standalone range check (--check --range A...B): compare commits, not the
 # working tree. Loud on errors — a misconfigured CI gate should fail visibly.
 if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
-	if ! range_changed=$(git -C "$root" diff --name-only "$RANGE" 2>/dev/null); then
+	if ! range_changed=$(git -C "$root" -c core.quotePath=false diff --name-only "$RANGE" 2>/dev/null); then
 		printf 'readmedaddy --check: cannot resolve range: %s\n' "$RANGE" >&2
 		exit 2
 	fi
@@ -245,6 +505,8 @@ if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
 		exit 0
 	fi
 	range_drifted=
+	# Paths from git are data, never globs: expansion off for the whole loop.
+	set -f
 	while IFS= read -r rc_path; do
 		if [ -z "$rc_path" ]; then
 			continue
@@ -255,6 +517,7 @@ if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
 	done <<EOF
 $range_changed
 EOF
+	set +f
 	range_drifted=$(printf '%s' "$range_drifted" | grep -v '^$' | sort -u)
 	if [ -z "$range_drifted" ]; then
 		exit 0
@@ -267,7 +530,10 @@ fi
 # (g) Compute working-tree drift.
 readme_dirty=0
 dirty_watched=
-porcelain=$(git -C "$root" status --porcelain 2>/dev/null)
+porcelain=$(git -C "$root" -c core.quotePath=false status --porcelain 2>/dev/null)
+# Porcelain paths are data, never globs: a file named 'README.m?' must not
+# expand to README.md and mask real drift. Expansion off for the whole loop.
+set -f
 while IFS= read -r pline; do
 	if [ -z "$pline" ]; then
 		continue
@@ -301,6 +567,7 @@ while IFS= read -r pline; do
 done <<EOF
 $porcelain
 EOF
+set +f
 
 # README being touched too means a refresh is already in progress: no nag.
 if [ "$readme_dirty" = 1 ]; then
@@ -312,6 +579,10 @@ dirty_watched=$(printf '%s' "$dirty_watched" | grep -v '^$' | sort -u)
 if [ -n "$dirty_watched" ]; then
 	signal_files=$dirty_watched
 else
+	if [ "$CHECK_MODE" = 1 ] && [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+		printf 'readmedaddy --check: shallow clone — committed-drift comparison needs full history (use fetch-depth: 0)\n' >&2
+		exit 2
+	fi
 	signal_files=$(committed_drift)
 fi
 
@@ -332,8 +603,15 @@ head_sha=$(git -C "$root" rev-parse --short HEAD 2>/dev/null)
 if [ -z "$head_sha" ]; then
 	head_sha=nohead
 fi
-files_sig=$(printf '%s' "$signal_files" | sort -u | tr '\n' ',')
-signature="$head_sha|$files_sig"
+# Drift class: working-tree edits vs committed-only drift. The signature is
+# HEAD + class (NOT the file list): dirtying a second watched file mid-session
+# is the same drift event, not a new nag.
+if [ -n "$dirty_watched" ]; then
+	drift_class=wt
+else
+	drift_class=committed
+fi
+signature="$head_sha|$drift_class"
 # Cooldown state lives INSIDE .git/ so the hook never litters the target
 # repo's working tree with an untracked directory.
 git_dir=$(git -C "$root" rev-parse --git-dir 2>/dev/null)
@@ -342,15 +620,24 @@ case "$git_dir" in
 /*) state_file=$git_dir/readmedaddy-state ;;
 *) state_file=$root/$git_dir/readmedaddy-state ;;
 esac
-stored=$(cat "$state_file" 2>/dev/null)
-if [ "$stored" = "$signature" ]; then
-	exit 0
-fi
 
 record_state() {
 	printf '%s\n' "$signature" >"$state_file" 2>/dev/null || return 0
 	return 0
 }
+
+stored=$(cat "$state_file" 2>/dev/null)
+if [ "$stored" = "$signature" ]; then
+	exit 0
+fi
+
+# First sight of this repo (no state yet) + only committed drift = pre-existing
+# staleness from before the hook was installed. Seed the cooldown silently so a
+# fresh install never opens with a nag. enforce mode is exempt on purpose.
+if [ ! -f "$state_file" ] && [ "$drift_class" = committed ] && [ "$mode" != enforce ]; then
+	record_state
+	exit 0
+fi
 
 # Build the human-readable change list (truncated).
 list=$(printf '%s' "$signal_files" | sort -u | tr '\n' ',' | sed 's/^,//; s/,$//')
@@ -373,11 +660,12 @@ enforce)
 	esc=$(escape_json "$reason")
 	printf '{"decision":"block","reason":"%s"}\n' "$esc"
 	;;
-auto | *)
+auto)
 	esc=$(escape_json "$reason")
 	printf '{"decision":"block","reason":"%s"}\n' "$esc"
 	record_state
 	;;
+*) : ;; # unreachable: mode is validated above; never block by accident
 esac
 
 exit 0

@@ -306,6 +306,35 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
                 err(f"{os.path.relpath(p, ROOT)}: network primitive '{pat}' (local-only invariant)")
 note(f"no-network guard: {net_scanned} executable file(s) clean")
 
+# 10. Action version-pin consistency ------------------------------------------
+# README (and docs) must never pin the GitHub Action to a superseded release.
+# Allowed pins: the moving major tag (@v<MAJOR>) or the exact current version
+# (@v<CHANGELOG top entry>). Anything else rots the quickstart.
+changelog_path = os.path.join(ROOT, "CHANGELOG.md")
+pin_files = [
+    os.path.join(ROOT, "README.md"),
+    os.path.join(REF_DIR, "auto-update-hook.md"),
+]
+if os.path.exists(changelog_path):
+    cm = re.search(r"^## \[(\d+)\.(\d+)\.(\d+)\]", read(changelog_path), re.M)
+    if not cm:
+        warn("CHANGELOG.md: no '## [x.y.z]' entry found — version-pin check skipped")
+    else:
+        cur_full = f"{cm.group(1)}.{cm.group(2)}.{cm.group(3)}"
+        cur_major = cm.group(1)
+        pins_checked = 0
+        for pf in pin_files:
+            if not os.path.exists(pf):
+                continue
+            for pin in re.findall(r"Systemartis/readmedaddy@v([0-9][0-9A-Za-z.]*)", read(pf)):
+                pins_checked += 1
+                if pin not in (cur_major, cur_full):
+                    err(
+                        f"{os.path.relpath(pf, ROOT)}: action pinned to @v{pin} "
+                        f"(current: v{cur_full}; recommended pin: @v{cur_major})"
+                    )
+        note(f"action version pins checked: {pins_checked}")
+
 # Report ---------------------------------------------------------------------
 for n in notes:
     print(f"  ok    {n}")

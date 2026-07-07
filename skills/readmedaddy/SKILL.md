@@ -11,7 +11,7 @@ description: >-
   facts about the code.
 license: MIT
 metadata:
-  version: 0.2.1
+  version: 0.3.0
 ---
 
 # readmedaddy
@@ -151,6 +151,31 @@ and, when they change while the README does not, prompts you to refresh it *thro
 this skill, in the same session*. It detects drift and asks; it never rewrites files
 on its own and never breaks a session. `install.sh` wires it up in one step. Full
 behavior, config, and modes are in `references/auto-update-hook.md`.
+
+## init — guard a repo
+
+When the user says "readmedaddy init", "guard this repo", or "set up
+readmedaddy": configure the whole system through the wizard script — it is the
+single serializer; never write `.readmedaddy.json` or the workflow YAML
+directly.
+
+1. Detect first, silently: `git rev-parse --show-toplevel`, README path via
+   `git ls-files`, default branch, whether origin is GitHub, existing
+   `.readmedaddy.json` (reconfigure mode).
+2. Ask at most **three** questions, one at a time, stating every detected fact
+   as an assumption the user can veto: nudge mode (auto/notify/enforce/off),
+   CI gate (comment/fail/off — comment is the advisory-first default), and
+   watch-list confirmation.
+3. Two-step through the script: run
+   `python3 scripts/readmedaddy-init.py --print` with every answer as a flag
+   (`--mode --pr --main --sweep --watch --readme --badge/--no-badge
+   --no-hook`), show the user the output as the preview, then on approval
+   re-run the same flags **without** `--print` to write. `--yes` = the
+   recommended preset.
+
+The wizard makes zero network calls; it writes only the config, the workflow
+file, one badge line, and (optionally) the Claude Code hook registration —
+each enumerated in the preview.
 
 ## What's in references/
 

@@ -5,4 +5,7 @@ __pycache__/
 .venv/
 .readmedaddy/
 .playwright-mcp/
+.claude/
 docs/readmedaddy-compendium.html
+docs/backlog.md
+docs/presentation.html
