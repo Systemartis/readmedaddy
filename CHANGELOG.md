@@ -8,6 +8,33 @@ All notable changes to readmedaddy are documented here. The format is based on
 
 ### Added
 
+- **The action handles every drift surface**: pull requests (as before),
+  **merge queues** (payload-SHA range, always reports so required checks never
+  stall a queue), **pushes to the default branch**, and **scheduled sweeps** —
+  configured from `.readmedaddy.json`'s `guard` section. PR-class events read
+  the config from the **base ref** (never the PR head, which cannot waive its
+  own gate); a `guard.pr` value wins over the legacy `mode:` input.
+- **README-health dashboard issue**: push/sweep drift maintains ONE pinned
+  issue updated in place — never issue-per-event. Sticky PR comments now
+  **resolve themselves** when a later push fixes the drift.
+- **`readmedaddy-init.py` — the guard wizard**: detect-then-confirm setup
+  (README path, watch list, nudge mode, CI gate, badge, hook registration) in
+  at most six questions, every one pre-answered from repo evidence. Every
+  question has a flag; `--yes` applies the recommended preset; `--print`
+  previews without writing; re-running reconfigures without clobbering hand
+  edits. Zero network. `--selftest` proves the contracts.
+- **SKILL.md `init` section**: agents drive the same wizard conversationally
+  (≤3 questions) through `--print` + flags — one serializer for every face.
+- **`install.sh --uninstall`**: one command removes every installed artifact
+  (all skill copies + the settings.json hook entry) and prints each path it
+  touches. Hook registration now degrades gracefully when python3 is absent.
+- **This repo guards itself**: a root `.readmedaddy.json` watches the action,
+  schema, scripts, and skill sources; CI runs the drift gate on PRs and merge
+  queues, and the shell/python jobs run on ubuntu **and macOS**.
+- **`--print-config KEY --raw`**: presence-aware config reads (empty when
+  absent) so consumers can implement config-over-input precedence without
+  grep.
+
 - **Config schema v2**: a `guard` section (`pr`, `main`, `sweep`,
   `autofix.runner`, `autofix.command`) with collision-safe key names, consumed
   by the GitHub Action from v0.3.0. A published JSON Schema
