@@ -496,7 +496,7 @@ def main(argv):
 
     # Writes: config atomically first, workflow last (spec §7).
     atomic_write(os.path.join(root, ".readmedaddy.json"), cfg_text)
-    if badge_needed:
+    if badge_needed and badge:
         content = _read(readme_path)
         lines = content.splitlines(keepends=True)
         for i, line in enumerate(lines):
