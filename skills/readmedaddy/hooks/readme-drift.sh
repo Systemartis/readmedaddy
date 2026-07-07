@@ -46,6 +46,8 @@ RANGE=
 RANGE_SET=0
 CONFIG_OVERRIDE=
 CONFIG_SET=0
+PRINT_MODE=0
+PRINT_KEY=
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--check) CHECK_MODE=1 ;;
@@ -66,6 +68,15 @@ while [ $# -gt 0 ]; do
 	--config=*)
 		CONFIG_OVERRIDE=${1#--config=}
 		CONFIG_SET=1
+		;;
+	--print-config)
+		shift
+		PRINT_KEY=${1:-}
+		PRINT_MODE=1
+		;;
+	--print-config=*)
+		PRINT_KEY=${1#--print-config=}
+		PRINT_MODE=1
 		;;
 	*)
 		# A typo'd flag must never pass silently green (e.g. --chekc falling
@@ -88,8 +99,16 @@ if [ "$CONFIG_SET" = 1 ] && [ -z "$CONFIG_OVERRIDE" ]; then
 	printf 'readmedaddy: --config requires a file path (use /dev/null for pure defaults)\n' >&2
 	exit 2
 fi
+if [ "$PRINT_MODE" = 1 ] && [ -z "$PRINT_KEY" ]; then
+	printf 'readmedaddy: --print-config requires a key (e.g. guard.pr)\n' >&2
+	exit 2
+fi
+if [ "$PRINT_MODE" = 1 ] && [ "$CHECK_MODE" = 1 ]; then
+	printf 'readmedaddy: --print-config and --check are mutually exclusive\n' >&2
+	exit 2
+fi
 
-if [ "$CHECK_MODE" = 0 ]; then
+if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ]; then
 	# (a) Read all of stdin.
 	stdin_data=$(cat 2>/dev/null)
 
@@ -107,11 +126,14 @@ fi
 # (d) Resolve repo root from the hook's CWD.
 root=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$root" ]; then
-	if [ "$CHECK_MODE" = 1 ]; then
-		printf 'readmedaddy --check: not inside a git repository (missing actions/checkout?)\n' >&2
+	if [ "$PRINT_MODE" = 1 ] && [ "$CONFIG_SET" = 1 ]; then
+		: # --print-config with an explicit --config needs no repo
+	elif [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ]; then
+		printf 'readmedaddy: not inside a git repository (missing actions/checkout?)\n' >&2
 		exit 2
+	else
+		exit 0
 	fi
-	exit 0
 fi
 
 # (e) Optional config: .readmedaddy.json (or an explicit --config FILE —
@@ -125,6 +147,12 @@ fi
 cfg_mode=
 cfg_readme=
 cfg_watch=
+en=
+cfg_guard_pr=
+cfg_guard_main=
+cfg_guard_sweep=
+cfg_guard_runner=
+cfg_guard_command=
 if [ -f "$config" ]; then
 	cfg=$(tr -d '\n' <"$config" 2>/dev/null)
 	# Scope extraction to the hook object: everything from `"hook" : {` to the
@@ -138,7 +166,8 @@ if [ -f "$config" ]; then
 	case "$cfg_hook" in
 	*'"enabled"'*)
 		en=$(printf '%s' "$cfg_hook" | sed -n 's/.*"enabled"[[:space:]]*:[[:space:]]*\([A-Za-z]*\).*/\1/p')
-		if [ "$en" = false ]; then
+		# Print mode reports config; it never gates.
+		if [ "$en" = false ] && [ "$PRINT_MODE" = 0 ]; then
 			exit 0
 		fi
 		;;
@@ -146,6 +175,13 @@ if [ -f "$config" ]; then
 	cfg_mode=$(printf '%s' "$cfg_hook" | sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 	cfg_readme=$(printf '%s' "$cfg_hook" | sed -n 's/.*"readme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 	cfg_watch=$(printf '%s' "$cfg_hook" | sed -n 's/.*"watch"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')
+	# guard.* keys are collision-safe by schema design (names unique file-wide),
+	# so flat whole-file extraction is correct for them.
+	cfg_guard_pr=$(printf '%s' "$cfg" | sed -n 's/.*"pr"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_main=$(printf '%s' "$cfg" | sed -n 's/.*"main"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_sweep=$(printf '%s' "$cfg" | sed -n 's/.*"sweep"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_runner=$(printf '%s' "$cfg" | sed -n 's/.*"runner"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_guard_command=$(printf '%s' "$cfg" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 fi
 
 # README path (relative to root).
@@ -176,8 +212,8 @@ case "$mode" in
 auto | notify | enforce) ;;
 off)
 	# "off" is a natural guess and must mean what it says (hook mode only;
-	# --check has its own contract and ignores mode).
-	if [ "$CHECK_MODE" = 0 ]; then
+	# --check has its own contract and ignores mode, print mode never gates).
+	if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ]; then
 		exit 0
 	fi
 	;;
@@ -186,6 +222,27 @@ off)
 	mode=notify
 	;;
 esac
+
+# --print-config KEY: resolved config values through this one parser, for the
+# GitHub Action and scripts. Reports the RAW configured value (defaults when
+# absent) — it never gates, never validates. Lint with --lint-config.
+if [ "$PRINT_MODE" = 1 ]; then
+	case "$PRINT_KEY" in
+	hook.enabled) printf '%s\n' "${en:-true}" ;;
+	hook.mode) printf '%s\n' "${cfg_mode:-auto}" ;;
+	hook.readme) printf '%s\n' "${cfg_readme:-README.md}" ;;
+	guard.pr) printf '%s\n' "${cfg_guard_pr:-comment}" ;;
+	guard.main) printf '%s\n' "${cfg_guard_main:-off}" ;;
+	guard.sweep) printf '%s\n' "${cfg_guard_sweep:-off}" ;;
+	guard.autofix.runner) printf '%s\n' "${cfg_guard_runner:-off}" ;;
+	guard.autofix.command) printf '%s\n' "$cfg_guard_command" ;;
+	*)
+		printf 'readmedaddy --print-config: unknown key: %s\n' "$PRINT_KEY" >&2
+		exit 2
+		;;
+	esac
+	exit 0
+fi
 
 # (f) No README -> do not nag.
 if [ ! -f "$root/$readme_path" ]; then

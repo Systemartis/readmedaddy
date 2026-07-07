@@ -530,6 +530,46 @@ else
 	note fail "--config missing value expected rc=2 (rc=$rc)"
 fi
 
+# --- --print-config KEY ---
+
+# (aj) guard keys print configured values; unknown key exits 2.
+d=$(setup_repo)
+cat >"$d/.readmedaddy.json" <<'CFG'
+{"hook":{"mode":"notify"},"guard":{"pr":"fail","main":"issue","sweep":"weekly","autofix":{"runner":"claude","command":""}}}
+CFG
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+pc() { (cd "$d" && sh "$HOOK" --print-config "$1" 2>/dev/null); }
+v1=$(pc guard.pr); v2=$(pc guard.main); v3=$(pc guard.sweep)
+v4=$(pc guard.autofix.runner); v5=$(pc hook.mode)
+(cd "$d" && sh "$HOOK" --print-config guard.nope >/dev/null 2>&1); rcu=$?
+if [ "$v1 $v2 $v3 $v4 $v5" = "fail issue weekly claude notify" ] && [ "$rcu" = 2 ]; then
+	note ok "--print-config resolves guard + hook keys, unknown key exits 2"
+else
+	note fail "--print-config got: pr=$v1 main=$v2 sweep=$v3 runner=$v4 mode=$v5 rcu=$rcu"
+fi
+
+# (ak) defaults when no config exists.
+d=$(setup_repo)
+def=$( (cd "$d" && sh "$HOOK" --print-config guard.pr 2>/dev/null); (cd "$d" && sh "$HOOK" --print-config guard.main 2>/dev/null); (cd "$d" && sh "$HOOK" --print-config guard.autofix.runner 2>/dev/null) )
+if [ "$def" = "comment
+off
+off" ]; then
+	note ok "--print-config defaults: pr=comment, main=off, runner=off"
+else
+	note fail "--print-config defaults wrong (got: $def)"
+fi
+
+# (al) --print-config composes with --config FILE.
+d=$(setup_repo)
+alt=$(mktemp "$TMPROOT/alt.XXXXXX")
+printf '{"guard":{"pr":"off"}}\n' >"$alt"
+v=$( (cd "$d" && sh "$HOOK" --print-config guard.pr --config "$alt" 2>/dev/null) )
+if [ "$v" = off ]; then
+	note ok "--print-config honors --config"
+else
+	note fail "--print-config with --config expected 'off' (got: $v)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1
