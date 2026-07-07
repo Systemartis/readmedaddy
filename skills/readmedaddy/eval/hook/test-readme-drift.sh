@@ -491,6 +491,45 @@ case "$out" in
 *) note fail "sibling enabled:false must not disable the hook (got: $out)" ;;
 esac
 
+# --- --config FILE (base-ref config injection) ---
+
+# (ag) --config /dev/null ignores the working tree's enabled:false.
+d=$(setup_repo)
+printf '{"hook":{"enabled":false}}\n' >"$d/.readmedaddy.json"
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+(cd "$d" && sh "$HOOK" --check --config /dev/null >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 1 ]; then
+	note ok "--config /dev/null overrides working-tree config (defaults apply)"
+else
+	note fail "--config /dev/null expected rc=1 (rc=$rc)"
+fi
+
+# (ah) --config FILE uses that file's watch list, not the working tree's.
+d=$(setup_repo)
+mkdir -p "$d/docs"
+printf 'g\n' >"$d/docs/g.md" && git -C "$d" add -A && git -C "$d" commit -qm docs
+alt=$(mktemp "$TMPROOT/alt.XXXXXX")
+printf '{"hook":{"watch":["docs/*.md"]}}\n' >"$alt"
+printf 'g2\n' >"$d/docs/g.md"
+out=$( (cd "$d" && sh "$HOOK" --check --config "$alt" 2>/dev/null) )
+rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$out" | grep -q 'docs/g.md'; then
+	note ok "--config FILE supplies the effective watch list"
+else
+	note fail "--config FILE expected rc=1 naming docs/g.md (rc=$rc, out: $out)"
+fi
+
+# (ai) --config without a value exits 2.
+d=$(setup_repo)
+(cd "$d" && sh "$HOOK" --check --config </dev/null >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "--config without a value exits 2"
+else
+	note fail "--config missing value expected rc=2 (rc=$rc)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1

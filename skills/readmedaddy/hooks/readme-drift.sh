@@ -44,6 +44,8 @@ docker-compose.yml
 CHECK_MODE=0
 RANGE=
 RANGE_SET=0
+CONFIG_OVERRIDE=
+CONFIG_SET=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--check) CHECK_MODE=1 ;;
@@ -55,6 +57,15 @@ while [ $# -gt 0 ]; do
 	--range=*)
 		RANGE=${1#--range=}
 		RANGE_SET=1
+		;;
+	--config)
+		shift
+		CONFIG_OVERRIDE=${1:-}
+		CONFIG_SET=1
+		;;
+	--config=*)
+		CONFIG_OVERRIDE=${1#--config=}
+		CONFIG_SET=1
 		;;
 	*)
 		# A typo'd flag must never pass silently green (e.g. --chekc falling
@@ -71,6 +82,10 @@ if [ "$RANGE_SET" = 1 ] && [ "$CHECK_MODE" = 0 ]; then
 fi
 if [ "$CHECK_MODE" = 1 ] && [ "$RANGE_SET" = 1 ] && [ -z "$RANGE" ]; then
 	printf 'readmedaddy --check: --range requires a value (e.g. origin/main...HEAD)\n' >&2
+	exit 2
+fi
+if [ "$CONFIG_SET" = 1 ] && [ -z "$CONFIG_OVERRIDE" ]; then
+	printf 'readmedaddy: --config requires a file path (use /dev/null for pure defaults)\n' >&2
 	exit 2
 fi
 
@@ -99,8 +114,14 @@ if [ -z "$root" ]; then
 	exit 0
 fi
 
-# (e) Optional config: .readmedaddy.json
-config=$root/.readmedaddy.json
+# (e) Optional config: .readmedaddy.json (or an explicit --config FILE —
+# CI gates pass the base ref's copy so a PR cannot waive its own gate;
+# /dev/null is the defaults-only sentinel and fails the -f test below).
+if [ "$CONFIG_SET" = 1 ]; then
+	config=$CONFIG_OVERRIDE
+else
+	config=$root/.readmedaddy.json
+fi
 cfg_mode=
 cfg_readme=
 cfg_watch=

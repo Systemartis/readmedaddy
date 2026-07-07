@@ -155,6 +155,7 @@ The same drift logic runs without any agent — pure local git and POSIX sh:
 ```sh
 readme-drift.sh --check                             # working tree (+ last-commit fallback)
 readme-drift.sh --check --range origin/main...HEAD  # commit range, for CI
+readme-drift.sh --check --config /path/to/config.json  # explicit config (CI: the base ref's copy)
 ```
 
 | Exit | Meaning |
@@ -172,6 +173,9 @@ Semantics that differ from Stop-hook mode, deliberately:
 - **Respects `.readmedaddy.json`.** `enabled: false`, a custom `readme`, and a
   custom `watch` list apply to every surface, so a project configures drift
   once.
+- **`--config FILE`** makes FILE the effective `.readmedaddy.json` (all keys);
+  `--config /dev/null` runs on pure defaults. CI gates use this to read the
+  config from the PR's base ref, so a PR cannot waive its own gate.
 
 **Git pre-commit warning** (universal — no agent, warns without blocking):
 
