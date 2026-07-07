@@ -207,7 +207,9 @@ cd readmedaddy && ./install.sh
 | **Cursor, Codex, Gemini CLI, Zed**, anything that reads `AGENTS.md` | vendor `skills/readmedaddy/` into the repo and add one line to `AGENTS.md`: *"When asked to write or improve a README, follow `skills/readmedaddy/SKILL.md`."* |
 | **Any other agent** | `DEST=/path ./install.sh` — the skill is plain Markdown; any agent that can read files can follow it |
 
-`./install.sh` copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with `--no-hook`; remove it later with `python3 scripts/install-hook.py --uninstall`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and (Claude Code only) your `settings.json`, and is safe to re-run.
+`./install.sh` copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with `--no-hook`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and (Claude Code only) your `settings.json`, and is safe to re-run.
+
+**Uninstall — one command, complete removal:** `./install.sh --uninstall` deletes every installed skill copy and removes the Stop-hook entry from your `settings.json`, printing each path it touches. Nothing else on the machine is affected.
 
 ## Local-only by design
 

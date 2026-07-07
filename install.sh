@@ -2,10 +2,12 @@
 # Install readmedaddy for every agent that reads Agent Skills, then verify,
 # then register the readme-drift auto-update hook (Claude Code, user-global).
 #
-#   ./install.sh            install for Claude Code + opencode + GitHub Copilot,
-#                           then register the Stop hook
-#   DEST=/path ./install.sh install to ONE custom skills dir only (any agent)
-#   ./install.sh --no-hook  install the skill only; skip hook registration
+#   ./install.sh             install for Claude Code + opencode + GitHub Copilot,
+#                            then register the Stop hook
+#   DEST=/path ./install.sh  install to ONE custom skills dir only (any agent)
+#   ./install.sh --no-hook   install the skill only; skip hook registration
+#   ./install.sh --uninstall remove every installed artifact: the skill copies
+#                            and the Stop-hook settings entry. Nothing else.
 #
 # Default destinations (the skill is the same folder of Markdown everywhere):
 #   ~/.claude/skills/readmedaddy           Claude Code (opencode reads this too)
@@ -22,15 +24,45 @@
 set -eu
 
 INSTALL_HOOK=1
+UNINSTALL=0
 for arg in "$@"; do
   case "$arg" in
     --no-hook) INSTALL_HOOK=0 ;;
+    --uninstall) UNINSTALL=1 ;;
     *) echo "error: unknown argument '$arg'" >&2; exit 1 ;;
   esac
 done
 
 REPO=$(cd "$(dirname "$0")" && pwd)
 SRC=$REPO/skills/readmedaddy
+
+if [ "$UNINSTALL" -eq 1 ]; then
+  # Corporate-clean removal: exactly the artifacts install.sh created, nothing
+  # else. Prints every path it touches.
+  if [ -n "${DEST:-}" ]; then
+    targets="$DEST/readmedaddy"
+  else
+    targets="$HOME/.claude/skills/readmedaddy
+$HOME/.config/opencode/skills/readmedaddy
+$HOME/.copilot/skills/readmedaddy"
+  fi
+  printf '%s\n' "$targets" | while IFS= read -r t; do
+    if [ -d "$t" ]; then
+      rm -rf "$t"
+      echo "removed: $t"
+    else
+      echo "not present: $t"
+    fi
+  done
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$REPO/scripts/install-hook.py" --uninstall
+  else
+    echo "python3 not found — if you registered the Stop hook, remove the"
+    echo "hooks.Stop entry ending in readme-drift.sh from ~/.claude/settings.json."
+  fi
+  echo "Uninstalled. Nothing outside the paths above was touched."
+  exit 0
+fi
 
 if [ ! -f "$SRC/SKILL.md" ]; then
   echo "error: $SRC/SKILL.md not found — run from the repo root." >&2
@@ -98,6 +130,11 @@ echo "  Claude Code: /skills lists it.  opencode: picked up automatically."
 echo "  Copilot CLI: /skills list.  Other agents: see README — one AGENTS.md line."
 
 HOOK="$PRIMARY/hooks/readme-drift.sh"
+if [ "$INSTALL_HOOK" -eq 1 ] && ! command -v python3 >/dev/null 2>&1; then
+  echo "Skill installed. python3 not found, so the Stop hook was NOT registered —"
+  echo "install python3 and run:  python3 \"$REPO/scripts/install-hook.py\" --command \"$HOOK\""
+  INSTALL_HOOK=0
+fi
 if [ "$INSTALL_HOOK" -eq 1 ]; then
   if [ ! -f "$HOOK" ]; then
     echo "  WARN  $HOOK is missing; skipping hook registration." >&2
