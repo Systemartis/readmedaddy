@@ -34,6 +34,23 @@ All notable changes to readmedaddy are documented here. The format is based on
 - **`--print-config KEY --raw`**: presence-aware config reads (empty when
   absent) so consumers can implement config-over-input precedence without
   grep.
+- **Tier 3, opt-in: `@readmedaddy fix`** — when `guard.autofix.runner` is set,
+  the wizard writes `readmedaddy-fix.yml`: comment `@readmedaddy fix` on a PR
+  and an agent refreshes the README and opens a fix-up PR for review. The
+  drift check stays free and local; only the fix step talks to a model.
+  Security rails baked in: write-access verified against the collaborators API
+  **before any checkout**, fork PRs refused, the audited head SHA pinned, the
+  readmedaddy distribution checkout scrubbed before the PR step, and
+  `add-paths` scoped so a fix PR can only ever carry the README. The agent
+  step is one swappable block — Claude is the tested default,
+  `runner: command` substitutes any CLI with the same contract.
+- **Claude Code plugin packaging**: `/plugin marketplace add
+  Systemartis/readmedaddy` — the Stop hook ships inside the plugin
+  (settings.json never edited; `/plugin uninstall` removes everything).
+  Teams pin it through version control via `enabledPlugins`.
+- **Enforcement recipe**: the wizard prints the exact rulesets API call
+  (additive, `evaluate` dry-run first) to make the drift check a required
+  status check; documented alongside team pinning in the README.
 
 - **Config schema v2**: a `guard` section (`pr`, `main`, `sweep`,
   `autofix.runner`, `autofix.command`) with collision-safe key names, consumed
