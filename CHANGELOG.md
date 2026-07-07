@@ -4,7 +4,12 @@ All notable changes to readmedaddy are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-07-08
+
+The guard release: one wizard configures every drift surface — session-end
+hook, PR gate, merge queue, merge-to-main dashboard, weekly sweep — plus an
+explicitly opt-in LLM fix tier. Detection stays pure local git on every
+surface.
 
 ### Added
 

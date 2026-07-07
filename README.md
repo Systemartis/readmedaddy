@@ -15,7 +15,7 @@
 
 [![ci](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml/badge.svg)](https://github.com/Systemartis/readmedaddy/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version](https://img.shields.io/badge/version-0.2.1-blue.svg)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
 [![Agent Skill](https://img.shields.io/badge/Claude%20Code-Agent%20Skill-8A2BE2.svg)](https://agentskills.io)
 
 **A [Claude Code](https://claude.ai/code) [Agent Skill](https://agentskills.io) that writes the README your repo deserves — and earns its score instead of asserting it.**
@@ -261,7 +261,7 @@ skills/readmedaddy/hooks/readme-drift.sh --check                             # w
 skills/readmedaddy/hooks/readme-drift.sh --check --range origin/main...HEAD  # commit range
 ```
 
-Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = bad range. `--check` writes no state, ignores the session-scoped `README_DADDY_HOOK` switch, and respects a project's `enabled: false`. Two ready-made wirings:
+Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = loud config/usage error (bad range, not a git repo, shallow clone — a misconfigured CI gate can never pass silently green). `--check` writes no state, ignores the session-scoped `README_DADDY_HOOK` switch, and respects a project's `enabled: false`. Three sibling flags round out the config story: `--config FILE` runs against an explicit config (CI passes the PR *base ref's* copy, so a PR cannot waive its own gate), `--print-config KEY` reads resolved values through the same parser, and `--lint-config` validates the file — types, enums, unknown keys — instead of letting a typo silently resolve to defaults. Two ready-made wirings:
 
 **Git pre-commit warning** (works for every agent and every human — warns, never blocks):
 
@@ -275,7 +275,7 @@ Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = bad ran
 ```yaml
 # .github/workflows/readme-drift.yml
 name: readme drift
-on: pull_request
+on: [pull_request, merge_group]     # merge_group: required checks never stall a queue
 permissions: { contents: read, pull-requests: write }
 jobs:
   readme-drift:
@@ -287,7 +287,7 @@ jobs:
         with: { mode: comment }     # one sticky PR comment; 'fail' = required check
 ```
 
-In `comment` mode it posts (and thereafter updates) a single PR comment naming the drifted files; in `fail` mode it fails the job and makes no API calls at all. This repo runs the same action on its own PRs. LLM-scored merge gates are deliberately not offered — judge scores wobble between passes, so scoring stays advisory.
+In `comment` mode it posts (and thereafter updates) a single PR comment naming the drifted files — and **resolves it** when a later push fixes the drift; in `fail` mode it fails the job and makes no API calls at all. The same action also watches **merge queues**, **pushes to the default branch** (drift lands in one pinned README-health dashboard issue, never issue-per-event), and a **weekly sweep** — all configured from `.readmedaddy.json`'s `guard` section, which the [init wizard](#guard-a-repo-init-wizard) writes for you. On PR-class events the config is read from the base ref, so the gate's rules can only change by merging them. This repo runs the same action on its own PRs. LLM-scored merge gates are deliberately not offered — judge scores wobble between passes, so scoring stays advisory. The only LLM surface is the explicitly opt-in `@readmedaddy fix` comment command, which never detects (that stays free and local) — it only writes the fix, as a PR a human reviews.
 
 ## Usage and triggers
 
