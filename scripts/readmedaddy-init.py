@@ -371,16 +371,20 @@ jobs:
 
       - name: Drift check (free, deterministic — zero tokens when fresh)
         id: drift
+        env:
+          # Ref names via env, never inline in run: — defense in depth against
+          # expression-injection even though only write-access users reach here.
+          BASE: ${{{{ steps.target.outputs.base }}}}
         run: |
-          git fetch -q origin "+refs/heads/${{{{ steps.target.outputs.base }}}}:refs/remotes/origin/${{{{ steps.target.outputs.base }}}}" || true
-          if git show "origin/${{{{ steps.target.outputs.base }}}}:.readmedaddy.json" > "$RUNNER_TEMP/rmd-config.json" 2>/dev/null; then
+          git fetch -q origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+          if git show "origin/$BASE:.readmedaddy.json" > "$RUNNER_TEMP/rmd-config.json" 2>/dev/null; then
             cfg="$RUNNER_TEMP/rmd-config.json"
           else
             cfg=/dev/null
           fi
           set +e
           files=$(.readmedaddy-dist/skills/readmedaddy/hooks/readme-drift.sh \\
-            --check --range "origin/${{{{ steps.target.outputs.base }}}}...HEAD" --config "$cfg")
+            --check --range "origin/$BASE...HEAD" --config "$cfg")
           rc=$?
           set -e
           case $rc in
@@ -393,9 +397,11 @@ jobs:
 
       - name: Nothing to fix
         if: steps.drift.outputs.drift != 'true'
+        env:
+          BASE: ${{{{ steps.target.outputs.base }}}}
         run: >
           gh api "/repos/${{{{ github.repository }}}}/issues/${{{{ github.event.issue.number }}}}/comments"
-          -f body="readmedaddy: no README drift against \\`${{{{ steps.target.outputs.base }}}}\\` — nothing to fix."
+          -f body="readmedaddy: no README drift against $BASE — nothing to fix."
 
       - name: Expose the skill to the agent
         if: steps.drift.outputs.drift == 'true'
