@@ -233,7 +233,7 @@ It is deliberately quiet. No git repo, no README, or a config that turns it off,
 | **notify** | Prints the same message to stderr and gets out of the way — awareness without a handoff. |
 | **enforce** | Re-prompts on every Stop until the README actually changes — for projects with a hard "README tracks code" rule. |
 
-Configure it per project with a `.readmedaddy.json` (mode, the watched README, the watch list), or force a mode for one session with `README_DADDY_HOOK=notify|enforce|off`. Disable it entirely with `README_DADDY_HOOK=off`. Full behavior, the drift logic, and the loop-safety guards are in [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md).
+Configure it per project with a `.readmedaddy.json` (mode, the watched README, the watch list), or force a mode for one session with `README_DADDY_HOOK=auto|notify|enforce`, or disable it for the session with `README_DADDY_HOOK=off`. Full behavior, the drift logic, and the loop-safety guards are in [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md).
 
 ### The same detector, anywhere — no agent required
 
@@ -256,13 +256,18 @@ Exit `0` = fresh, `1` = drift (the drifted files print to stdout), `2` = bad ran
 **Pull-request gate** with the bundled GitHub Action ([`action.yml`](action.yml)) — catches drift from contributors who use no agent at all:
 
 ```yaml
+# .github/workflows/readme-drift.yml
+name: readme drift
 on: pull_request
 permissions: { contents: read, pull-requests: write }
-steps:
-  - uses: actions/checkout@v4
-    with: { fetch-depth: 0 }        # the range diff needs the merge-base
-  - uses: Systemartis/readmedaddy@v0.2.0
-    with: { mode: comment }         # one sticky PR comment; 'fail' = required check
+jobs:
+  readme-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }    # the range diff needs the merge-base
+      - uses: Systemartis/readmedaddy@v0
+        with: { mode: comment }     # one sticky PR comment; 'fail' = required check
 ```
 
 In `comment` mode it posts (and thereafter updates) a single PR comment naming the drifted files; in `fail` mode it fails the job and makes no API calls at all. This repo runs the same action on its own PRs. LLM-scored merge gates are deliberately not offered — judge scores wobble between passes, so scoring stays advisory.
