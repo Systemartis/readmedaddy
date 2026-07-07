@@ -14,9 +14,10 @@ Two rules for using this file:
 - **Imitate the move, not the words.** "Lead with a runnable example" transfers;
   the exact six lines FastAPI ships do not. Quoted taglines below are evidence of
   the move, not copy to paste.
-- **Verify before you copy.** Every entry cites an `owner/repo` or domain. Check
-  the live README first — projects rewrite their front pages, and a stale quote
-  is worse than none.
+- **Never fetch the live README.** This skill operates offline; every pattern
+  here is baked in so nothing needs fetching. The `owner/repo` citations are
+  provenance, not links to follow. Quoted taglines may have drifted since they
+  were recorded — one more reason to imitate the *move*, never paste the words.
 
 The through-line: **a README is a sales page that happens to be Markdown.** The
 first screen does the selling. Everything below is for the reader you already

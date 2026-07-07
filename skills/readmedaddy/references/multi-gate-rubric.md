@@ -57,7 +57,7 @@ social proof.
 
 - **0:** bare name, no tagline, no badges — or badges for things that don't exist (invented star counts, fake download numbers, a CI badge with no CI).
 - **5:** name + one-liner + a tight row of **real** badges (CI status, version, license) and at most a line of honest social proof.
-- **Litmus:** do the trust signals here actually resolve? A badge that 404s or a star count nobody can verify scores 0, not 5.
+- **Litmus:** do the trust signals correspond to anything real *in the repo*? A CI badge with no workflow file under `.github/workflows/`, a version badge that contradicts the manifest, or a star count nobody can verify scores 0, not 5. (Checkable offline by construction — never fetch a URL to verify.)
 - **Doesn't move it:** badge count beyond the useful set. Badge spam does not raise this gate and can lower G5.
 
 *Why: trust signals are only worth points if they are true; a fabricated badge is worse than none.*
@@ -296,6 +296,6 @@ generator passes):
 ## Scoring discipline
 
 - Never invent a number. Every gate score must trace to something actually on the page.
-- Before scoring G2 or G7, confirm that badges, benchmarks, and links **resolve and are real**. CI/version/license badges that become valid on push are allowed; an unverifiable trust claim scores low, never high.
+- Before scoring G2 or G7, confirm that badges, benchmarks, and links **refer to things the repo itself declares** — a CI badge needs a workflow file in `.github/workflows/`, a version badge must match the manifest, a link must point at a path that exists in the tree or a URL the repo's own metadata declares. All of this is checkable offline; **never fetch a URL to verify anything**. Badges that become valid on push are allowed; an unverifiable trust claim scores low, never high.
 - Any quality claim about the finished README must cite a gate score, not assert one. "Strong quickstart" means G4 = 5 with the block that proves it, or it doesn't get said.
 - Score the README as it will render on push, not as it reads in your head — open it as a stranger would, first screen first.
