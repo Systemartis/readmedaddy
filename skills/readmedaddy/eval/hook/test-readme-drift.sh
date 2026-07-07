@@ -450,6 +450,47 @@ else
 	note fail "CHECK outside git expected rc=2 (rc=$rc)"
 fi
 
+# --- config schema v2: parser hardening ---
+
+# (ad) "mode":"off" disables the hook (today it BLOCKS — the worst fallback).
+d=$(setup_repo)
+printf '{"hook":{"mode":"off"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+if [ -z "$out" ]; then
+	note ok "mode:off disables the hook"
+else
+	note fail "mode:off should be silent (got: $out)"
+fi
+
+# (ae) Unknown mode degrades to notify + stderr warning, never to blocking.
+d=$(setup_repo)
+printf '{"hook":{"mode":"blokc"}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | sh "$HOOK" 2>/dev/null) )
+errout=$( (cd "$d" && printf '%s' "$STDIN_CONT_FALSE" | sh "$HOOK" 2>&1 >/dev/null) )
+if [ -z "$out" ] && printf '%s' "$errout" | grep -qi 'unknown mode'; then
+	note ok "unknown mode degrades to notify with a warning"
+else
+	note fail "unknown mode expected notify+warning (out: $out | err: $errout)"
+fi
+
+# (af) Keys OUTSIDE the hook object no longer corrupt parsing: a SIBLING
+# section's enabled:false must not disable the hook. (Today the greedy
+# whole-file sed reads it and silences the hook — this is the exact hazard
+# that blocks adding new config sections.)
+d=$(setup_repo)
+printf '{"hook":{"mode":"auto"},"future":{"enabled":false}}\n' >"$d/.readmedaddy.json"
+git -C "$d" add -A && git -C "$d" commit -qm cfg
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+out=$(run_hook "$d" "$STDIN_CONT_FALSE")
+case "$out" in
+*'"decision":"block"'*) note ok "sibling section's enabled:false is ignored" ;;
+*) note fail "sibling enabled:false must not disable the hook (got: $out)" ;;
+esac
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1

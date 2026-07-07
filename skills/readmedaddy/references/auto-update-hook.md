@@ -117,7 +117,7 @@ copy-paste starting point.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `hook.enabled` | boolean | `true` | `false` turns the hook off for this repo. |
-| `hook.mode` | string | `"auto"` | `"auto"`, `"notify"`, or `"enforce"`. |
+| `hook.mode` | string | `"auto"` | `"auto"`, `"notify"`, `"enforce"`, or `"off"` (hook disabled; `--check` unaffected). Unknown values degrade to `notify` with a warning — never to blocking. |
 | `hook.readme` | string | `"README.md"` | Path to the README the hook watches. |
 | `hook.watch` | string[] | the default list above | Patterns of files whose changes imply README drift: exact paths, `dir/**` (prefix), `**/name` (suffix), or plain globs like `docs/*.md` (fnmatch semantics — `*` also crosses `/`). |
 
@@ -143,10 +143,10 @@ Example:
 ```
 
 One parsing caveat (deliberately simple, no JSON parser in POSIX sh): the hook
-reads the **last** occurrence of each key anywhere in the file — including
-inside string values. Keep the real `hook` object *after* any documentation
-strings (as the shipped example does), and don't put text like `"enabled":
-false` inside a doc string below it.
+reads its keys from the **`hook` object** — everything between `"hook": {` and
+the first `}`. Keys elsewhere in the file (doc strings, other sections) are
+ignored. Keep the `hook` object free of nested objects; validate the whole
+file any time with `readme-drift.sh --lint-config`.
 
 ## Standalone `--check` mode: any agent, CI, git hooks
 

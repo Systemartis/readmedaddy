@@ -233,6 +233,8 @@ It is deliberately quiet. No git repo, no README, or a config that turns it off,
 | **notify** | Prints the same message to stderr and gets out of the way — awareness without a handoff. |
 | **enforce** | Re-prompts on every Stop until the README actually changes — for projects with a hard "README tracks code" rule. |
 
+A fourth value, `"off"`, disables the Stop hook for the repo; the standalone `--check` still runs (use `"enabled": false` to turn off every surface).
+
 Configure it per project with a `.readmedaddy.json` (mode, the watched README, the watch list), or force a mode for one session with `README_DADDY_HOOK=auto|notify|enforce`, or disable it for the session with `README_DADDY_HOOK=off`. Full behavior, the drift logic, and the loop-safety guards are in [`references/auto-update-hook.md`](skills/readmedaddy/references/auto-update-hook.md).
 
 ### The same detector, anywhere — no agent required

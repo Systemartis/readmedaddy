@@ -106,17 +106,25 @@ cfg_readme=
 cfg_watch=
 if [ -f "$config" ]; then
 	cfg=$(tr -d '\n' <"$config" 2>/dev/null)
-	case "$cfg" in
+	# Scope extraction to the hook object: everything from `"hook" : {` to the
+	# first `}`. The hook object holds only scalars and one array, so the first
+	# closing brace ends it. Falls back to whole-file scan when no hook object
+	# exists (historical configs).
+	cfg_hook=$(printf '%s' "$cfg" | sed -n 's/.*"hook"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+	if [ -z "$cfg_hook" ]; then
+		cfg_hook=$cfg
+	fi
+	case "$cfg_hook" in
 	*'"enabled"'*)
-		en=$(printf '%s' "$cfg" | sed -n 's/.*"enabled"[[:space:]]*:[[:space:]]*\([A-Za-z]*\).*/\1/p')
+		en=$(printf '%s' "$cfg_hook" | sed -n 's/.*"enabled"[[:space:]]*:[[:space:]]*\([A-Za-z]*\).*/\1/p')
 		if [ "$en" = false ]; then
 			exit 0
 		fi
 		;;
 	esac
-	cfg_mode=$(printf '%s' "$cfg" | sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_readme=$(printf '%s' "$cfg" | sed -n 's/.*"readme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-	cfg_watch=$(printf '%s' "$cfg" | sed -n 's/.*"watch"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')
+	cfg_mode=$(printf '%s' "$cfg_hook" | sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_readme=$(printf '%s' "$cfg_hook" | sed -n 's/.*"readme"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	cfg_watch=$(printf '%s' "$cfg_hook" | sed -n 's/.*"watch"[[:space:]]*:[[:space:]]*\[\([^]]*\)\].*/\1/p')
 fi
 
 # README path (relative to root).
@@ -142,6 +150,20 @@ if [ -n "$cfg_mode" ]; then
 fi
 case "${README_DADDY_HOOK:-}" in
 notify | auto | enforce) mode=$README_DADDY_HOOK ;;
+esac
+case "$mode" in
+auto | notify | enforce) ;;
+off)
+	# "off" is a natural guess and must mean what it says (hook mode only;
+	# --check has its own contract and ignores mode).
+	if [ "$CHECK_MODE" = 0 ]; then
+		exit 0
+	fi
+	;;
+*)
+	printf 'readmedaddy: unknown mode "%s" in .readmedaddy.json — treating as notify (valid: auto|notify|enforce|off)\n' "$mode" >&2
+	mode=notify
+	;;
 esac
 
 # (f) No README -> do not nag.
@@ -408,11 +430,12 @@ enforce)
 	esc=$(escape_json "$reason")
 	printf '{"decision":"block","reason":"%s"}\n' "$esc"
 	;;
-auto | *)
+auto)
 	esc=$(escape_json "$reason")
 	printf '{"decision":"block","reason":"%s"}\n' "$esc"
 	record_state
 	;;
+*) : ;; # unreachable: mode is validated above; never block by accident
 esac
 
 exit 0
