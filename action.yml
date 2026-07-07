@@ -1,9 +1,10 @@
 name: readmedaddy drift check
 description: >-
-  Comment or fail when README-relevant files (manifests, entrypoints, CI,
-  install scripts) changed in a pull request but the README did not.
-  Pure local git — no network calls of its own, no LLM, no data leaves the
-  runner. Configure per-repo with .readmedaddy.json.
+  Comment, open a dashboard issue, or fail when README-relevant files
+  (manifests, entrypoints, CI, install scripts) changed but the README did
+  not. Handles pull requests, merge queues, pushes to the default branch, and
+  scheduled sweeps. Pure local git — no network calls of its own, no LLM, no
+  data leaves the runner. Configure per-repo with .readmedaddy.json.
 branding:
   icon: book-open
   color: purple
@@ -11,12 +12,13 @@ branding:
 inputs:
   mode:
     description: >-
-      What to do on drift: "comment" posts/updates one sticky PR comment;
-      "fail" fails the job (use as a required check).
+      Legacy PR-event fallback when the repo has no guard.pr config:
+      "comment" posts/updates one sticky PR comment; "fail" fails the job.
+      A guard.pr value in the base ref's .readmedaddy.json always wins.
     required: false
     default: comment
   github-token:
-    description: Token used only to post the PR comment in comment mode.
+    description: Token used only to post PR comments / the dashboard issue.
     required: false
     default: ${{ github.token }}
 
@@ -35,53 +37,151 @@ runs:
       shell: bash
       env:
         BASE_REF: ${{ github.base_ref }}
+        EVENT: ${{ github.event_name }}
+        MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        PUSH_SHA: ${{ github.sha }}
+        INPUT_MODE: ${{ inputs.mode }}
       run: |
         set -u
-        if [ -z "$BASE_REF" ]; then
-          echo "readmedaddy: not a pull_request event — nothing to compare, skipping." >&2
-          { echo "drift=false"; echo "files="; } >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        # Make sure the base ref exists locally (works with fetch-depth: 0;
-        # with a shallow checkout the merge-base may be missing — see docs).
-        git fetch -q origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF" || true
+        DRIFT_SH="${{ github.action_path }}/skills/readmedaddy/hooks/readme-drift.sh"
+        CFG_FILE="$RUNNER_TEMP/rmd-config.json"
+        out() { printf '%s\n' "$1" >> "$GITHUB_OUTPUT"; }
+        emit_files() {
+          # Randomized heredoc delimiter: file names are branch-controlled.
+          d="RMD_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+          { echo "files<<$d"; printf '%s\n' "$1"; echo "$d"; } >> "$GITHUB_OUTPUT"
+        }
+
+        # Resolve the drift range + effective config source per event class.
+        # PR-class events read config from the BASE ref (never the head — a PR
+        # must not be able to waive its own gate); /dev/null = defaults.
+        RANGE=""
+        CONFIG_ARGS=""
+        case "$EVENT" in
+          pull_request)
+            if [ -z "$BASE_REF" ]; then
+              echo "::error::readmedaddy: pull_request event without base_ref."
+              exit 2
+            fi
+            git fetch -q origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF" || true
+            RANGE="origin/$BASE_REF...HEAD"
+            if git show "origin/$BASE_REF:.readmedaddy.json" > "$CFG_FILE" 2>/dev/null; then
+              CONFIG_ARGS="--config $CFG_FILE"
+            else
+              CONFIG_ARGS="--config /dev/null"
+            fi
+            ;;
+          merge_group)
+            RANGE="$MG_BASE_SHA...$MG_HEAD_SHA"
+            if git show "$MG_BASE_SHA:.readmedaddy.json" > "$CFG_FILE" 2>/dev/null; then
+              CONFIG_ARGS="--config $CFG_FILE"
+            else
+              CONFIG_ARGS="--config /dev/null"
+            fi
+            ;;
+          push)
+            # The pushed commit on the default branch IS the source of truth:
+            # working-tree config applies. All-zeros before-SHA = branch
+            # creation / force push -> rangeless committed-drift check.
+            case "$PUSH_BEFORE" in
+              *[!0]*) RANGE="$PUSH_BEFORE...$PUSH_SHA" ;;
+              *) RANGE="" ;;
+            esac
+            ;;
+          schedule | workflow_dispatch)
+            RANGE=""
+            ;;
+          *)
+            echo "readmedaddy: event '$EVENT' is not a drift surface — skipping." >&2
+            out "drift=false"; emit_files ""
+            exit 0
+            ;;
+        esac
 
         set +e
-        files=$("${{ github.action_path }}/skills/readmedaddy/hooks/readme-drift.sh" \
-          --check --range "origin/$BASE_REF...HEAD")
+        if [ -n "$RANGE" ]; then
+          # shellcheck disable=SC2086  # CONFIG_ARGS is two safe words
+          files=$("$DRIFT_SH" --check --range "$RANGE" $CONFIG_ARGS)
+        else
+          # shellcheck disable=SC2086
+          files=$("$DRIFT_SH" --check $CONFIG_ARGS)
+        fi
         rc=$?
         set -e
         case $rc in
           0) drift=false ;;
           1) drift=true ;;
-          *) echo "readmedaddy: could not resolve origin/$BASE_REF...HEAD — use actions/checkout with fetch-depth: 0." >&2
+          *) echo "::error::readmedaddy: drift check failed (missing actions/checkout, shallow clone without fetch-depth: 0, or bad range $RANGE)." >&2
              exit "$rc" ;;
         esac
+
+        # Effective response mode for THIS event, through the one parser.
+        respond="none"
+        case "$EVENT" in
+          pull_request | merge_group)
+            cfg_pr=$("$DRIFT_SH" --print-config guard.pr --raw ${CONFIG_ARGS:---config /dev/null} 2>/dev/null) || cfg_pr=""
+            if [ -n "$cfg_pr" ]; then respond="$cfg_pr"; else respond="$INPUT_MODE"; fi
+            ;;
+          push)
+            respond=$("$DRIFT_SH" --print-config guard.main 2>/dev/null) || respond="off"
+            [ "$respond" = issue ] && respond="issue" || true
+            ;;
+          schedule | workflow_dispatch)
+            sweep=$("$DRIFT_SH" --print-config guard.sweep 2>/dev/null) || sweep="off"
+            if [ "$sweep" = weekly ]; then respond="issue"; else respond="off"; fi
+            ;;
+        esac
+
         {
-          echo "drift=$drift"
-          echo 'files<<RMD_EOF'
-          printf '%s\n' "$files"
-          echo 'RMD_EOF'
-        } >> "$GITHUB_OUTPUT"
+          out "drift=$drift"
+          out "event_class=$EVENT"
+          out "respond=$respond"
+        }
+        emit_files "$files"
         if [ "$drift" = true ]; then
           echo "README drift detected:" >&2
           printf '%s\n' "$files" >&2
         fi
 
+    # PR-class gate: sticky comment (advisory) or fail. Resolves its own
+    # comment when a later push fixes the drift.
     - id: gate
-      if: steps.check.outputs.drift == 'true'
+      if: contains(fromJSON('["pull_request","merge_group"]'), steps.check.outputs.event_class)
       shell: bash
       env:
-        MODE: ${{ inputs.mode }}
+        DRIFT: ${{ steps.check.outputs.drift }}
+        RESPOND: ${{ steps.check.outputs.respond }}
         GH_TOKEN: ${{ inputs.github-token }}
         PR: ${{ github.event.pull_request.number }}
         REPO: ${{ github.repository }}
         FILES: ${{ steps.check.outputs.files }}
+        EVENT: ${{ steps.check.outputs.event_class }}
       run: |
         set -eu
+        [ "$RESPOND" = off ] && exit 0
         # Filenames are branch-controlled: strip backticks so a crafted name
         # cannot break out of the fenced block in the comment body.
         FILES=${FILES//\`/}
+
+        if [ "$DRIFT" != true ]; then
+          # Fresh. On PRs, resolve our sticky comment if one exists (cosmetic:
+          # degrade silently on read-only tokens / fork PRs).
+          if [ "$EVENT" = pull_request ] && [ -n "${PR:-}" ]; then
+            set +e
+            existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
+              --jq 'add | map(select(.body | startswith("<!-- readmedaddy-drift -->"))) | .[0].id' 2>/dev/null)
+            if [ -n "$existing" ] && [ "$existing" != null ]; then
+              gh api -X PATCH "repos/$REPO/issues/comments/$existing" \
+                -f body="<!-- readmedaddy-drift -->
+        ✅ **readmedaddy: resolved** — the README was updated alongside the code." >/dev/null 2>&1
+            fi
+            set -e
+          fi
+          exit 0
+        fi
+
         body="<!-- readmedaddy-drift -->
         ### readmedaddy: this PR may leave the README behind
 
@@ -92,24 +192,33 @@ runs:
         \`\`\`
 
         If the change is user-visible, consider refreshing the README (e.g. ask your agent to run the **readmedaddy** skill). If the README is genuinely unaffected, ignore this — it will not repeat unless new drift appears."
-        if [ "$MODE" = fail ]; then
+
+        if [ "$RESPOND" = fail ]; then
           echo "$body"
           echo "::error::README drift — README-relevant files changed but the README did not."
           exit 1
         fi
+
         {
           echo "### readmedaddy drift"
           echo '```'
           echo "$FILES"
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+
+        # merge_group has no PR to comment on: step summary + pass is the
+        # whole advisory response (a required check must always report).
+        if [ "$EVENT" = merge_group ] || [ -z "${PR:-}" ]; then
+          exit 0
+        fi
+
         # Sticky comment: update the existing marker comment or create one.
         # On fork PRs GITHUB_TOKEN is read-only regardless of `permissions:`,
         # so comment mode must degrade to a warning instead of failing the
         # advisory gate for exactly the outside contributors it targets.
         set +e
-        existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-          --jq '[.[] | select(.body | startswith("<!-- readmedaddy-drift -->"))][0].id' 2>/dev/null)
+        existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --slurp \
+          --jq 'add | map(select(.body | startswith("<!-- readmedaddy-drift -->"))) | .[0].id' 2>/dev/null)
         if [ -n "$existing" ] && [ "$existing" != null ]; then
           gh api -X PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" >/dev/null 2>&1
         else
@@ -122,3 +231,71 @@ runs:
         else
           echo "Posted drift comment on PR #$PR."
         fi
+
+    # Push/schedule surface: one pinned "README health" dashboard issue,
+    # updated in place — never issue-per-event. `fail` fails the job instead.
+    - id: dashboard
+      if: contains(fromJSON('["push","schedule","workflow_dispatch"]'), steps.check.outputs.event_class)
+      shell: bash
+      env:
+        DRIFT: ${{ steps.check.outputs.drift }}
+        RESPOND: ${{ steps.check.outputs.respond }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        FILES: ${{ steps.check.outputs.files }}
+        SHA: ${{ github.sha }}
+      run: |
+        set -eu
+        [ "$RESPOND" = off ] && exit 0
+        FILES=${FILES//\`/}
+
+        if [ "$RESPOND" = fail ]; then
+          if [ "$DRIFT" = true ]; then
+            echo "::error::README drift on the default branch:"
+            printf '%s\n' "$FILES"
+            exit 1
+          fi
+          exit 0
+        fi
+
+        # respond=issue: maintain the dashboard.
+        status_line="✅ fresh — no README drift detected"
+        files_block=""
+        if [ "$DRIFT" = true ]; then
+          status_line="⚠️ drift — these README-relevant files changed but the README did not:"
+          files_block="\`\`\`
+        $FILES
+        \`\`\`"
+        fi
+        body="<!-- readmedaddy-dashboard -->
+        ### readmedaddy: README health
+
+        Last checked: \`$SHA\` ($(date -u +%Y-%m-%dT%H:%M:%SZ))
+
+        $status_line
+        $files_block
+
+        Refresh with the **readmedaddy** skill, or waive paths via \`.readmedaddy.json\` (\`hook.watch\`) — set \`guard.main\`/\`guard.sweep\` to \`off\` to silence this dashboard."
+
+        set +e
+        existing=$(gh api "repos/$REPO/issues?state=open" --paginate --slurp \
+          --jq 'add | map(select((.pull_request == null) and (.body | startswith("<!-- readmedaddy-dashboard -->")))) | .[0].number' 2>/dev/null)
+        if [ -n "$existing" ] && [ "$existing" != null ]; then
+          gh api -X PATCH "repos/$REPO/issues/$existing" -f body="$body" >/dev/null 2>&1
+          rc=$?
+        elif [ "$DRIFT" = true ]; then
+          # Create the dashboard only when there is something to report.
+          gh api "repos/$REPO/issues" -f title="readmedaddy: README health" -f body="$body" >/dev/null 2>&1
+          rc=$?
+        else
+          rc=0
+        fi
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "::warning::readmedaddy: token cannot manage the dashboard issue. Status is in the step summary."
+        fi
+        {
+          echo "### readmedaddy: README health"
+          echo "$status_line"
+          [ -n "$FILES" ] && { echo '```'; echo "$FILES"; echo '```'; }
+        } >> "$GITHUB_STEP_SUMMARY"
