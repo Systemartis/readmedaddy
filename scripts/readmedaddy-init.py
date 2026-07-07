@@ -278,7 +278,7 @@ def build_fix_workflow(answers):
             Read .claude/skills/readmedaddy/SKILL.md and follow it to refresh
             the README so it reflects the current state of this repository.
             Never invent facts about the code. Edit files in the working tree
-            only — do not run git, do not commit, do not open pull requests.
+            only — do not run git, do not commit, do not open a pull request.
           claude_args: |
             --allowedTools "Read,Glob,Grep,Edit,Write"
             --max-turns 30"""
