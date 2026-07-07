@@ -92,6 +92,10 @@ fi
 # (d) Resolve repo root from the hook's CWD.
 root=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$root" ]; then
+	if [ "$CHECK_MODE" = 1 ]; then
+		printf 'readmedaddy --check: not inside a git repository (missing actions/checkout?)\n' >&2
+		exit 2
+	fi
 	exit 0
 fi
 
@@ -213,7 +217,7 @@ match_watch() {
 # Best-effort committed drift: newest commit touching a watched path is newer
 # than the newest commit touching the README. Prints changed file names if so.
 committed_drift() {
-	cd_readme_ct=$(git -C "$root" log -1 --format=%ct -- "$readme_path" 2>/dev/null)
+	cd_readme_ct=$(git -C "$root" -c core.quotePath=false log -1 --format=%ct -- "$readme_path" 2>/dev/null)
 	if [ -z "$cd_readme_ct" ]; then
 		return 0
 	fi
@@ -223,9 +227,9 @@ committed_drift() {
 	IFS='
 '
 	# shellcheck disable=SC2086
-	cd_watched_ct=$(git -C "$root" log -1 --format=%ct -- $watch_list 2>/dev/null)
+	cd_watched_ct=$(git -C "$root" -c core.quotePath=false log -1 --format=%ct -- $watch_list 2>/dev/null)
 	# shellcheck disable=SC2086
-	cd_files=$(git -C "$root" log -1 --name-only --format= -- $watch_list 2>/dev/null)
+	cd_files=$(git -C "$root" -c core.quotePath=false log -1 --name-only --format= -- $watch_list 2>/dev/null)
 	IFS=$cd_old
 	if [ "$cd_had_f" = 0 ]; then set +f; fi
 	if [ -z "$cd_watched_ct" ]; then
@@ -240,7 +244,7 @@ committed_drift() {
 # Standalone range check (--check --range A...B): compare commits, not the
 # working tree. Loud on errors — a misconfigured CI gate should fail visibly.
 if [ "$CHECK_MODE" = 1 ] && [ -n "$RANGE" ]; then
-	if ! range_changed=$(git -C "$root" diff --name-only "$RANGE" 2>/dev/null); then
+	if ! range_changed=$(git -C "$root" -c core.quotePath=false diff --name-only "$RANGE" 2>/dev/null); then
 		printf 'readmedaddy --check: cannot resolve range: %s\n' "$RANGE" >&2
 		exit 2
 	fi
@@ -274,7 +278,7 @@ fi
 # (g) Compute working-tree drift.
 readme_dirty=0
 dirty_watched=
-porcelain=$(git -C "$root" status --porcelain 2>/dev/null)
+porcelain=$(git -C "$root" -c core.quotePath=false status --porcelain 2>/dev/null)
 # Porcelain paths are data, never globs: a file named 'README.m?' must not
 # expand to README.md and mask real drift. Expansion off for the whole loop.
 set -f
@@ -323,6 +327,10 @@ dirty_watched=$(printf '%s' "$dirty_watched" | grep -v '^$' | sort -u)
 if [ -n "$dirty_watched" ]; then
 	signal_files=$dirty_watched
 else
+	if [ "$CHECK_MODE" = 1 ] && [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+		printf 'readmedaddy --check: shallow clone — committed-drift comparison needs full history (use fetch-depth: 0)\n' >&2
+		exit 2
+	fi
 	signal_files=$(committed_drift)
 fi
 

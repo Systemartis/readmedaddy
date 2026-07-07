@@ -159,9 +159,9 @@ readme-drift.sh --check --range origin/main...HEAD  # commit range, for CI
 
 | Exit | Meaning |
 |------|---------|
-| `0` | fresh — or nothing to check (no git repo, no README, `enabled: false`) |
+| `0` | fresh — or nothing to check (no README, `enabled: false`) |
 | `1` | drift — the drifted watched files print to stdout, one per line |
-| `2` | usage or git error (bad `--range`) — loud on purpose, so a misconfigured CI gate fails visibly |
+| `2` | usage or git error (bad `--range`, not a git repo, shallow clone in committed-drift mode) — loud on purpose, so a misconfigured CI gate fails visibly |
 
 Semantics that differ from Stop-hook mode, deliberately:
 
@@ -259,9 +259,9 @@ and never needs a gitignore entry. `--check` mode writes no state at all.
 
 ## Honesty note
 
-Known ceiling: paths that git quotes in porcelain output (non-ASCII or special
-characters) are compared in their quoted form, so a README at such a path may
-be mis-detected. ASCII paths — the overwhelming case — are exact.
+Known ceiling: paths containing control characters are still compared in git's
+quoted form and may be mis-detected. Non-ASCII paths (accents, CJK) are handled
+exactly — the detector reads git output with `core.quotePath=false`.
 
 This hook **detects drift and prompts an in-session refresh through the readmedaddy
 skill.** That is the whole contract. It does **not** edit your README, does not run

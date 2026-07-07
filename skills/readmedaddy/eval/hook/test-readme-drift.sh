@@ -408,6 +408,48 @@ else
 	note fail "GLOB-NAMED expected rc=1 naming package.json (rc=$rc, out: $out)"
 fi
 
+# (aa) NON-ASCII watched path matches in --range mode (quotePath off).
+d=$(setup_repo)
+mkdir -p "$d/src"
+naive="$d/src/na$(printf '\303\257')ve.js"
+printf 'x\n' >"$naive"
+git -C "$d" add -A && git -C "$d" commit -qm unicode
+base=$(git -C "$d" rev-parse HEAD)
+printf 'y\n' >"$naive"
+git -C "$d" commit -qam "bump unicode file"
+(cd "$d" && sh "$HOOK" --check --range "$base..HEAD" >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 1 ]; then
+	note ok "RANGE matches non-ASCII watched paths"
+else
+	note fail "RANGE non-ASCII expected rc=1 (rc=$rc)"
+fi
+
+# (ab) SHALLOW clone: clean-tree --check exits 2 loudly, never a silent 0.
+d=$(setup_repo)
+printf '{"name":"x","v":2}\n' >"$d/package.json"
+git -C "$d" commit -qam "bump manifest"
+shal=$(mktemp -d "$TMPROOT/shallow.XXXXXX")
+git clone -q --depth 1 "file://$d" "$shal/clone" 2>/dev/null
+(cd "$shal/clone" && sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "SHALLOW clean-tree --check exits 2"
+else
+	note fail "SHALLOW --check expected rc=2 (rc=$rc)"
+fi
+
+# (ac) NOT-A-REPO: --check outside git exits 2 (hook mode stays silent 0).
+d=$(mktemp -d "$TMPROOT/norepo.XXXXXX")
+printf 'readme\n' >"$d/README.md"
+(cd "$d" && sh "$HOOK" --check >/dev/null 2>&1)
+rc=$?
+if [ "$rc" = 2 ]; then
+	note ok "CHECK outside a git repo exits 2"
+else
+	note fail "CHECK outside git expected rc=2 (rc=$rc)"
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1
