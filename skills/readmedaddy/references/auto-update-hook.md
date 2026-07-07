@@ -120,6 +120,21 @@ copy-paste starting point.
 | `hook.mode` | string | `"auto"` | `"auto"`, `"notify"`, `"enforce"`, or `"off"` (hook disabled; `--check` unaffected). Unknown values degrade to `notify` with a warning — never to blocking. |
 | `hook.readme` | string | `"README.md"` | Path to the README the hook watches. |
 | `hook.watch` | string[] | the default list above | Patterns of files whose changes imply README drift: exact paths, `dir/**` (prefix), `**/name` (suffix), or plain globs like `docs/*.md` (fnmatch semantics — `*` also crosses `/`). |
+| `guard.pr` | string | `"comment"` | PR gate: `"off"`, `"comment"` (sticky advisory), `"fail"` (red check). Consumed by the GitHub Action from v0.3.0. |
+| `guard.main` | string | `"off"` | Default-branch push response: `"off"`, `"issue"` (pinned dashboard issue), `"fail"`. From v0.3.0. |
+| `guard.sweep` | string | `"off"` | `"weekly"` re-checks freshness on a schedule. From v0.3.0. |
+| `guard.autofix.runner` | string | `"off"` | Opt-in fix tier: `"claude"` or `"command"` (uses `guard.autofix.command`). Costs LLM tokens. From v0.3.0. |
+
+### Validate your config
+
+```sh
+readme-drift.sh --lint-config          # exit 0 valid, 1 problems, 2 usage
+readme-drift.sh --print-config guard.pr  # resolved value (default if absent)
+```
+
+`--lint-config` checks JSON well-formedness and unknown keys (python3, stdlib
+only) plus enum values (pure sh). Wizard-written configs also reference the
+published JSON Schema via `$schema`, so editors validate as you type.
 
 Example:
 

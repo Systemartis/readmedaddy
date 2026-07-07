@@ -1,5 +1,6 @@
 {
-  "_README": "Copy this file to your repo root as .readmedaddy.json (drop the .example) to configure the readmedaddy readme-drift Stop hook. All fields are optional; omit any key to keep its default. JSON has no comments, so this _README field carries the docs. The hook detects when watched signal files changed but your README did not, then prompts an in-session refresh through the readmedaddy skill -- it never rewrites files on its own. mode is auto (block once per drift, default) | notify (stderr only, non-blocking) | enforce (re-prompt every Stop until the README changes). Force a mode for one session with README_DADDY_HOOK=auto|notify|enforce, or disable with README_DADDY_HOOK=off. Full docs: skills/readmedaddy/references/auto-update-hook.md",
+  "$schema": "https://raw.githubusercontent.com/Systemartis/readmedaddy/main/schema/readmedaddy.schema.json",
+  "_README": "Copy this file to your repo root as .readmedaddy.json (drop the .example) to configure the readmedaddy readme-drift Stop hook. All fields are optional; omit any key to keep its default. JSON has no comments, so this _README field carries the docs. The hook detects when watched signal files changed but your README did not, then prompts an in-session refresh through the readmedaddy skill -- it never rewrites files on its own. mode is auto (block once per drift event, default) | notify (stderr only, non-blocking) | enforce (re-prompt every Stop until the README changes) | off (hook disabled; --check unaffected). Force a mode for one session with README_DADDY_HOOK=auto|notify|enforce, or disable with README_DADDY_HOOK=off. Full docs: skills/readmedaddy/references/auto-update-hook.md The guard section configures the CI action (v0.3.0+): pr = off|comment|fail, main = off|issue|fail, sweep = off|weekly, autofix.runner = off|claude|command (LLM tier, opt-in, costs tokens). Validate this file any time with readme-drift.sh --lint-config.",
   "hook": {
     "enabled": true,
     "mode": "auto",
@@ -25,5 +26,14 @@
       "docker-compose.yml",
       "**/SKILL.md"
     ]
+  },
+  "guard": {
+    "pr": "comment",
+    "main": "off",
+    "sweep": "off",
+    "autofix": {
+      "runner": "off",
+      "command": ""
+    }
   }
 }
