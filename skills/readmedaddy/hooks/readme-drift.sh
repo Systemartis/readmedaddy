@@ -48,6 +48,7 @@ CONFIG_OVERRIDE=
 CONFIG_SET=0
 PRINT_MODE=0
 PRINT_KEY=
+LINT_MODE=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--check) CHECK_MODE=1 ;;
@@ -78,6 +79,7 @@ while [ $# -gt 0 ]; do
 		PRINT_KEY=${1#--print-config=}
 		PRINT_MODE=1
 		;;
+	--lint-config) LINT_MODE=1 ;;
 	*)
 		# A typo'd flag must never pass silently green (e.g. --chekc falling
 		# through to hook mode and exiting 0 in a CI gate). Loud, always.
@@ -107,8 +109,12 @@ if [ "$PRINT_MODE" = 1 ] && [ "$CHECK_MODE" = 1 ]; then
 	printf 'readmedaddy: --print-config and --check are mutually exclusive\n' >&2
 	exit 2
 fi
+if [ "$LINT_MODE" = 1 ] && { [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ]; }; then
+	printf 'readmedaddy: --lint-config runs alone (not with --check/--print-config)\n' >&2
+	exit 2
+fi
 
-if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ]; then
+if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
 	# (a) Read all of stdin.
 	stdin_data=$(cat 2>/dev/null)
 
@@ -126,9 +132,9 @@ fi
 # (d) Resolve repo root from the hook's CWD.
 root=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$root" ]; then
-	if [ "$PRINT_MODE" = 1 ] && [ "$CONFIG_SET" = 1 ]; then
-		: # --print-config with an explicit --config needs no repo
-	elif [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ]; then
+	if { [ "$PRINT_MODE" = 1 ] || [ "$LINT_MODE" = 1 ]; } && [ "$CONFIG_SET" = 1 ]; then
+		: # print/lint with an explicit --config needs no repo
+	elif [ "$CHECK_MODE" = 1 ] || [ "$PRINT_MODE" = 1 ] || [ "$LINT_MODE" = 1 ]; then
 		printf 'readmedaddy: not inside a git repository (missing actions/checkout?)\n' >&2
 		exit 2
 	else
@@ -166,8 +172,8 @@ if [ -f "$config" ]; then
 	case "$cfg_hook" in
 	*'"enabled"'*)
 		en=$(printf '%s' "$cfg_hook" | sed -n 's/.*"enabled"[[:space:]]*:[[:space:]]*\([A-Za-z]*\).*/\1/p')
-		# Print mode reports config; it never gates.
-		if [ "$en" = false ] && [ "$PRINT_MODE" = 0 ]; then
+		# Print/lint modes report on config; they never gate.
+		if [ "$en" = false ] && [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
 			exit 0
 		fi
 		;;
@@ -212,8 +218,8 @@ case "$mode" in
 auto | notify | enforce) ;;
 off)
 	# "off" is a natural guess and must mean what it says (hook mode only;
-	# --check has its own contract and ignores mode, print mode never gates).
-	if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ]; then
+	# --check has its own contract and ignores mode, print/lint never gate).
+	if [ "$CHECK_MODE" = 0 ] && [ "$PRINT_MODE" = 0 ] && [ "$LINT_MODE" = 0 ]; then
 		exit 0
 	fi
 	;;
@@ -241,6 +247,85 @@ if [ "$PRINT_MODE" = 1 ]; then
 		exit 2
 		;;
 	esac
+	exit 0
+fi
+
+# --lint-config: validate the config file. Exit 0 = valid (or nothing to
+# lint), 1 = problems (findings on stderr), 2 = usage error. JSON
+# well-formedness and unknown-key detection need python3 (stdlib json only —
+# still zero network); without it, enum checks still run.
+if [ "$LINT_MODE" = 1 ]; then
+	if [ ! -f "$config" ]; then
+		printf 'readmedaddy --lint-config: no config at %s — nothing to lint.\n' "$config" >&2
+		exit 0
+	fi
+	lint_fail=0
+	if command -v python3 >/dev/null 2>&1; then
+		if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$config" 2>/dev/null; then
+			printf 'readmedaddy --lint-config: %s is not valid JSON\n' "$config" >&2
+			lint_fail=1
+		fi
+	else
+		printf 'readmedaddy --lint-config: python3 not found — skipping JSON well-formedness, checking enums only\n' >&2
+	fi
+	lint_enum() {
+		le_key=$1
+		le_val=$2
+		le_allowed=$3
+		if [ -z "$le_val" ]; then
+			return 0
+		fi
+		case " $le_allowed " in
+		*" $le_val "*) return 0 ;;
+		esac
+		printf 'readmedaddy --lint-config: %s: "%s" is not one of: %s\n' "$le_key" "$le_val" "$le_allowed" >&2
+		lint_fail=1
+		return 0
+	}
+	lint_enum hook.mode "$cfg_mode" "auto notify enforce off"
+	lint_enum guard.pr "$cfg_guard_pr" "off comment fail"
+	lint_enum guard.main "$cfg_guard_main" "off issue fail"
+	lint_enum guard.sweep "$cfg_guard_sweep" "off weekly"
+	lint_enum guard.autofix.runner "$cfg_guard_runner" "off claude command"
+	# Known-key walk: a typo'd key must not lint clean. python3 only — the sh
+	# parser can't enumerate keys; the degraded path already warned above.
+	if command -v python3 >/dev/null 2>&1; then
+		if ! python3 - "$config" <<'PYEOF' >&2; then
+import json, sys
+KNOWN = {
+    "": {"$schema", "hook", "guard", "_README"},
+    "hook": {"enabled", "mode", "readme", "watch"},
+    "guard": {"pr", "main", "sweep", "autofix"},
+    "guard.autofix": {"runner", "command"},
+}
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)  # well-formedness already reported above
+bad = []
+def walk(obj, path):
+    if not isinstance(obj, dict):
+        return
+    allowed = KNOWN.get(path)
+    if allowed is None:
+        return
+    for k, v in obj.items():
+        if k not in allowed:
+            bad.append(f"{path + '.' if path else ''}{k}")
+        else:
+            walk(v, f"{path + '.' if path else ''}{k}")
+walk(cfg, "")
+for b in bad:
+    print(f"readmedaddy --lint-config: unknown key: {b}")
+sys.exit(1 if bad else 0)
+PYEOF
+			lint_fail=1
+		fi
+	fi
+	if [ "$lint_fail" = 1 ]; then
+		exit 1
+	fi
+	printf 'readmedaddy --lint-config: %s OK\n' "$config"
 	exit 0
 fi
 

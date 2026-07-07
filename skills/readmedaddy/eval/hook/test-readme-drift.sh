@@ -570,6 +570,51 @@ else
 	note fail "--print-config with --config expected 'off' (got: $v)"
 fi
 
+# --- --lint-config ---
+
+# (am) valid config lints clean (exit 0).
+d=$(setup_repo)
+cat >"$d/.readmedaddy.json" <<'CFG'
+{"hook":{"enabled":true,"mode":"auto","readme":"README.md","watch":["src/**"]},"guard":{"pr":"comment","main":"issue","sweep":"weekly","autofix":{"runner":"off","command":""}}}
+CFG
+(cd "$d" && sh "$HOOK" --lint-config >/dev/null 2>&1); rc=$?
+if [ "$rc" = 0 ]; then note ok "lint: valid config exits 0"; else note fail "lint valid expected 0 (rc=$rc)"; fi
+
+# (an) malformed JSON exits 1 (when python3 is present).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"hook":{' >"$d/.readmedaddy.json"
+	(cd "$d" && sh "$HOOK" --lint-config >/dev/null 2>&1); rc=$?
+	if [ "$rc" = 1 ]; then note ok "lint: malformed JSON exits 1"; else note fail "lint malformed expected 1 (rc=$rc)"; fi
+fi
+
+# (ao) bad enum exits 1 and names the key.
+d=$(setup_repo)
+printf '{"hook":{"mode":"blokc"}}\n' >"$d/.readmedaddy.json"
+errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'mode'; then
+	note ok "lint: bad enum exits 1 naming the key"
+else
+	note fail "lint bad enum expected 1 naming mode (rc=$rc, err: $errout)"
+fi
+
+# (ap) no config file exits 0 with a note.
+d=$(setup_repo)
+(cd "$d" && sh "$HOOK" --lint-config >/dev/null 2>&1); rc=$?
+if [ "$rc" = 0 ]; then note ok "lint: no config is fine (exit 0)"; else note fail "lint no-config expected 0 (rc=$rc)"; fi
+
+# (aq) unknown key exits 1 naming it (python3 machines).
+if command -v python3 >/dev/null 2>&1; then
+	d=$(setup_repo)
+	printf '{"guard":{"prr":"fail"}}\n' >"$d/.readmedaddy.json"
+	errout=$( (cd "$d" && sh "$HOOK" --lint-config 2>&1 >/dev/null) ); rc=$?
+	if [ "$rc" = 1 ] && printf '%s' "$errout" | grep -q 'prr'; then
+		note ok "lint: unknown key exits 1 naming it"
+	else
+		note fail "lint unknown key expected 1 naming prr (rc=$rc, err: $errout)"
+	fi
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1
