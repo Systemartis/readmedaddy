@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>readmedaddy — the README your repo deserves</title>
+<style>
+  /* ---------- theme ---------- */
+  :root {
+    --bg: #0b0e14;
+    --surface: #11151f;
+    --surface2: #171c29;
+    --text: #e7eaf1;
+    --muted: #98a1b3;
+    --faint: #6b7383;
+    --accent: #a78bfa;
+    --accent-dim: rgba(167, 139, 250, .14);
+    --green: #7ac896;
+    --green-dim: rgba(122, 200, 150, .13);
+    --amber: #e0b366;
+    --amber-dim: rgba(224, 179, 102, .13);
+    --red: #e08a8a;
+    --border: #222a3a;
+    --code-bg: #0e1220;
+    --shadow: rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f7f9;
+      --surface: #ffffff;
+      --surface2: #f1f0f6;
+      --text: #1c2130;
+      --muted: #5a6274;
+      --faint: #8a90a0;
+      --accent: #6d28d9;
+      --accent-dim: rgba(109, 40, 217, .09);
+      --green: #1e7d4b;
+      --green-dim: rgba(30, 125, 75, .10);
+      --amber: #9a6a12;
+      --amber-dim: rgba(154, 106, 18, .10);
+      --red: #b44444;
+      --border: #e0e2ea;
+      --code-bg: #f3f2f8;
+      --shadow: rgba(30, 30, 60, .14);
+      color-scheme: light;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre, kbd, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  /* ---------- deck chrome ---------- */
+  #progress {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0;
+    background: var(--accent); z-index: 50; transition: width .25s ease;
+  }
+  #bar {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 54px; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border);
+    font-size: 12.5px; color: var(--muted);
+  }
+  #bar .brand { letter-spacing: .02em; }
+  #bar .brand b { color: var(--text); font-weight: 600; }
+  #nav { display: flex; align-items: center; gap: 10px; }
+  #nav button, #helpBtn {
+    appearance: none; background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    min-width: 40px; height: 32px; padding: 0 12px;
+    font: 500 14px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #nav button:hover:not(:disabled), #helpBtn:hover { border-color: var(--accent); }
+  #nav button:disabled { opacity: .35; cursor: default; }
+  #counter { min-width: 62px; text-align: center; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
+  #helpBtn { min-width: 32px; }
+
+  /* ---------- slides ---------- */
+  #deck { position: fixed; inset: 0 0 54px 0; }
+  .slide {
+    position: absolute; inset: 0; overflow-y: auto;
+    display: flex;
+    opacity: 0; visibility: hidden;
+    transform: translateX(14px);
+    transition: opacity .28s ease, transform .28s ease, visibility .28s;
+  }
+  .slide.active { opacity: 1; visibility: visible; transform: none; }
+  .wrap {
+    margin: auto; width: 100%; max-width: 1080px;
+    padding: 44px 56px 56px;
+  }
+  @media (max-width: 760px) { .wrap { padding: 28px 22px 44px; } }
+
+  .kicker {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  h1 { font-size: clamp(1.9rem, 4.2vw, 3.1rem); line-height: 1.12; letter-spacing: -.015em; font-weight: 700; }
+  h2 { font-size: clamp(1.45rem, 2.9vw, 2.15rem); line-height: 1.18; letter-spacing: -.012em; font-weight: 700; margin-bottom: 18px; }
+  h3 { font-size: 1.02rem; font-weight: 650; margin-bottom: 6px; }
+  p.lede { font-size: clamp(1rem, 1.6vw, 1.2rem); color: var(--muted); max-width: 62ch; }
+  .slide p + p { margin-top: 10px; }
+
+  .cols { display: grid; gap: 16px; margin-top: 22px; }
+  .cols.c2 { grid-template-columns: repeat(2, 1fr); }
+  .cols.c3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) { .cols.c2, .cols.c3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .card p, .card li { font-size: .92rem; color: var(--muted); }
+  .card h3 .mono { color: var(--accent); font-size: .95em; }
+  .card ul { padding-left: 18px; margin-top: 6px; }
+  .card li + li { margin-top: 4px; }
+
+  pre.code {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+    font-size: 13px; line-height: 1.6; color: var(--text);
+  }
+  pre.code .cm { color: var(--faint); }
+  pre.code .k  { color: var(--accent); }
+  code.inline {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 5px; padding: .08em .35em; font-size: .88em;
+  }
+
+  .tblwrap { overflow-x: auto; margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; }
+  table.tbl { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  table.tbl th {
+    text-align: left; font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint); font-weight: 600;
+    padding: 9px 14px; border-bottom: 1px solid var(--border);
+    background: var(--surface2); white-space: nowrap;
+  }
+  table.tbl td { padding: 8px 14px; border-bottom: 1px solid var(--border); color: var(--muted); vertical-align: top; }
+  table.tbl tr:last-child td { border-bottom: 0; }
+  table.tbl td:first-child { color: var(--text); white-space: nowrap; }
+  table.tbl td.num { font-family: ui-monospace, Menlo, monospace; text-align: right; white-space: nowrap; }
+  table.tbl th.num { text-align: right; }
+
+  .pill {
+    display: inline-block; font-family: ui-monospace, Menlo, monospace;
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    border-radius: 99px; padding: 2.5px 9px; vertical-align: 2px;
+    border: 1px solid transparent; font-weight: 600;
+  }
+  .pill.ship { color: var(--green); background: var(--green-dim); border-color: color-mix(in srgb, var(--green) 35%, transparent); }
+  .pill.plan { color: var(--amber); background: var(--amber-dim); border-color: color-mix(in srgb, var(--amber) 35%, transparent); }
+  .pill.acc  { color: var(--accent); background: var(--accent-dim); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .badge {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 4px 11px; color: var(--muted); background: var(--surface);
+  }
+  .badge b { color: var(--accent); font-weight: 600; }
+
+  /* pipeline diagram */
+  .pipe { display: flex; align-items: stretch; gap: 0; margin: 26px 0 8px; flex-wrap: wrap; }
+  .pipe .step {
+    flex: 1 1 150px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 13px 12px; text-align: center; min-width: 140px;
+  }
+  .pipe .step .n { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--accent); letter-spacing: .1em; }
+  .pipe .step .t { font-weight: 650; font-size: .95rem; margin-top: 2px; }
+  .pipe .step .d { font-size: .78rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  .pipe .arr { align-self: center; padding: 0 7px; color: var(--faint); font-family: ui-monospace, Menlo, monospace; font-size: 15px; }
+  @media (max-width: 900px) { .pipe { flex-direction: column; } .pipe .arr { transform: rotate(90deg); padding: 2px 0; align-self: center; } }
+
+  /* exit codes */
+  .exits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+  @media (max-width: 760px) { .exits { grid-template-columns: 1fr; } }
+  .exit { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .exit .code { font-family: ui-monospace, Menlo, monospace; font-size: 1.9rem; font-weight: 700; }
+  .exit.e0 .code { color: var(--green); }
+  .exit.e1 .code { color: var(--amber); }
+  .exit.e2 .code { color: var(--red); }
+  .exit .what { font-weight: 650; margin-top: 2px; }
+  .exit p { font-size: .84rem; color: var(--muted); margin-top: 4px; }
+
+  /* title slide */
+  .titlewrap { text-align: left; }
+  pre.banner {
+    font-size: clamp(5.4px, 1.05vw, 12px); line-height: 1.18;
+    color: var(--accent); overflow-x: auto; margin-bottom: 26px;
+    text-shadow: 0 0 24px var(--accent-dim);
+  }
+  .tagline { font-size: clamp(1.1rem, 2.2vw, 1.55rem); font-weight: 600; max-width: 34em; line-height: 1.35; }
+  .subtag { margin-top: 14px; color: var(--muted); font-size: clamp(.95rem, 1.5vw, 1.1rem); max-width: 56ch; }
+
+  .note {
+    margin-top: 20px; border-left: 3px solid var(--accent);
+    background: var(--accent-dim); border-radius: 0 10px 10px 0;
+    padding: 12px 16px; font-size: .9rem; color: var(--muted);
+  }
+  .note.warn { border-left-color: var(--amber); background: var(--amber-dim); }
+  .note b { color: var(--text); }
+
+  .big-close { font-size: clamp(1.5rem, 3.4vw, 2.5rem); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; max-width: 24em; }
+  .big-close .a { color: var(--accent); }
+
+  /* help overlay */
+  #help {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    backdrop-filter: blur(4px);
+  }
+  #help.open { display: flex; }
+  #help .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 26px 30px; width: min(420px, 92vw);
+    box-shadow: 0 24px 64px var(--shadow);
+  }
+  #help h3 { margin-bottom: 14px; font-size: 1.05rem; }
+  #help table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  #help td { padding: 6px 0; color: var(--muted); }
+  #help td:first-child { width: 46%; }
+  kbd {
+    display: inline-block; border: 1px solid var(--border); border-bottom-width: 2px;
+    border-radius: 6px; background: var(--surface2); color: var(--text);
+    font-size: 11.5px; padding: 2px 7px; margin-right: 4px;
+  }
+  #help .hint { margin-top: 14px; font-size: .8rem; color: var(--faint); }
+
+  ul.tight { padding-left: 20px; margin-top: 12px; }
+  ul.tight li { margin-top: 7px; color: var(--muted); font-size: .95rem; }
+  ul.tight li b, ul.tight li code { color: var(--text); }
+
+  .footlink { margin-top: 28px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--faint); }
+  .footlink b { color: var(--muted); font-weight: 500; }
+
+  /* intro arc: quote + timeline */
+  blockquote.q {
+    margin: 26px 0 10px; padding: 4px 0 4px 22px;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(1.15rem, 2.4vw, 1.7rem); font-weight: 600; line-height: 1.35;
+    letter-spacing: -.01em; max-width: 30em;
+  }
+  blockquote.q .cite { display: block; margin-top: 12px; font-size: .82rem; font-weight: 400; color: var(--faint); font-family: ui-monospace, Menlo, monospace; }
+  .timeline { display: flex; gap: 0; margin-top: 30px; flex-wrap: wrap; align-items: stretch; }
+  .timeline .era { flex: 1 1 200px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; min-width: 190px; }
+  .timeline .era .yr { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); letter-spacing: .1em; }
+  .timeline .era .t { font-weight: 650; font-size: .98rem; margin-top: 3px; }
+  .timeline .era .d { font-size: .82rem; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+  .timeline .arr { align-self: center; padding: 0 8px; color: var(--faint); font-family: ui-monospace, Menlo, monospace; font-size: 16px; }
+  .timeline .era.flip { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-dim); }
+  .timeline .era.flip .t { color: var(--text); }
+  @media (max-width: 900px) { .timeline { flex-direction: column; } .timeline .arr { transform: rotate(90deg); align-self: center; padding: 2px 0; } }
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<main id="deck">
+
+  <!-- ================================ 1 · TITLE ================================ -->
+  <section class="slide" aria-label="Title">
+    <div class="wrap titlewrap">
+<pre class="banner">██████╗ ███████╗ █████╗ ██████╗ ███╗   ███╗███████╗
+██╔══██╗██╔════╝██╔══██╗██╔══██╗████╗ ████║██╔════╝
+██████╔╝█████╗  ███████║██║  ██║██╔████╔██║█████╗
+██╔══██╗██╔══╝  ██╔══██║██║  ██║██║╚██╔╝██║██╔══╝
+██║  ██║███████╗██║  ██║██████╔╝██║ ╚═╝ ██║███████╗
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚═╝     ╚═╝╚══════╝
+██████╗  █████╗ ██████╗ ██████╗ ██╗   ██╗
+██╔══██╗██╔══██╗██╔══██╗██╔══██╗╚██╗ ██╔╝
+██║  ██║███████║██║  ██║██║  ██║ ╚████╔╝
+██║  ██║██╔══██║██║  ██║██║  ██║  ╚██╔╝
+██████╔╝██║  ██║██████╔╝██████╔╝   ██║
+╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═════╝    ╚═╝</pre>
+      <p class="tagline">Writes the README your repo deserves — and earns its score instead of asserting it.</p>
+      <p class="subtag">Most README tools fill one template. readmedaddy runs a contest and ships the result with the receipts.</p>
+      <div class="badges">
+        <span class="badge">version <b>0.3.0</b></span>
+        <span class="badge">license <b>MIT</b></span>
+        <span class="badge"><b>Agent Skill</b> · Claude Code / opencode / Copilot</span>
+        <span class="badge">drift detector · <b>POSIX sh</b></span>
+        <span class="badge"><b>GitHub Action</b></span>
+      </div>
+      <p class="footlink">github.com/Systemartis/readmedaddy &nbsp;·&nbsp; <b>→</b> to advance · <b>?</b> for shortcuts</p>
+    </div>
+  </section>
+
+  <!-- ================================ 2 · PROBLEM ================================ -->
+  <!-- ============ 2 · LINEAGE: twenty years of docs chasing code ============ -->
+  <section class="slide" aria-label="Docs chasing code">
+    <div class="wrap">
+      <div class="kicker">a short history of a power balance</div>
+      <h2>Twenty years of docs chasing code.</h2>
+      <div class="timeline">
+        <div class="era">
+          <div class="yr">2001</div>
+          <div class="t">Agile Manifesto</div>
+          <div class="d">"Working software <b>over</b> comprehensive documentation." Prose becomes the thing you skip when the sprint gets tight.</div>
+        </div>
+        <div class="arr">→</div>
+        <div class="era">
+          <div class="yr">2005</div>
+          <div class="t">Code as Documentation</div>
+          <div class="d">Fowler: the code is the <em>primary</em> documentation — nothing else has the precision. Make it clear, review it, pair on it.</div>
+        </div>
+        <div class="arr">→</div>
+        <div class="era">
+          <div class="yr">2010s</div>
+          <div class="t">Docs as Code</div>
+          <div class="d">Write the Docs: write documentation "with the same tools as code" — git, plain text, reviews, CI. Docs adopt code's discipline.</div>
+        </div>
+        <div class="arr">→</div>
+        <div class="era flip">
+          <div class="yr">now</div>
+          <div class="t">The arrow flips</div>
+          <div class="d">Agents read your Markdown and <b>produce running code from it</b>. Documentation stopped chasing code — it started generating it.</div>
+        </div>
+      </div>
+      <p class="footlink">Sources: agilemanifesto.org · martinfowler.com/bliki/CodeAsDocumentation · writethedocs.org/guide/docs-as-code</p>
+    </div>
+  </section>
+
+  <!-- ============ 3 · THE INVERSION: documentation is code ============ -->
+  <section class="slide" aria-label="Documentation is code">
+    <div class="wrap">
+      <div class="kicker">the age of agentic development</div>
+      <h2>Documentation <span style="color:var(--accent)">is</span> code now.</h2>
+      <blockquote class="q">
+        "It's just markdown files. Real AI work is actual, running code."
+        <span class="cite">— the dismissal Daniel Warfield got for a Markdown-based agent project, right before arguing the opposite ("The Documentation is the Code", 2026)</span>
+      </blockquote>
+      <p class="lede">That dismissal has it backwards. In agentic development, Markdown is the part that <em>executes</em>: an agent reads your README to learn the quickstart, your <code class="inline">AGENTS.md</code> to learn the rules, your <code class="inline">CLAUDE.md</code> to learn the architecture, a <code class="inline">SKILL.md</code> to learn a whole capability — and then it writes the running code. The prose is upstream of the program.</p>
+      <div class="note"><b>The consequence:</b> every stale sentence in those files is a bug an agent will faithfully reproduce, at machine speed, on every session. Docs stopped being the thing that rots quietly — the rot compiles now.</div>
+    </div>
+  </section>
+
+  <!-- ============ 4 · CONSEQUENCE: docs need what code has ============ -->
+  <section class="slide" aria-label="Docs need what code has">
+    <div class="wrap">
+      <div class="kicker">if docs are code…</div>
+      <h2>…they need what code has.</h2>
+      <p class="lede">We'd never ship code without version control, review, tests, and CI. Docs-as-code brought the first two. The age of agents makes the rest non-negotiable — and that's exactly the gap this project fills:</p>
+      <div class="tblwrap"><table class="tbl">
+        <tr><th>Code has</th><th>Docs equivalent</th><th>Here, today</th></tr>
+        <tr><td>Version control &amp; review</td><td>Markdown in git, reviewed in PRs</td><td>docs-as-code, solved <span class="pill ship">2010s</span></td></tr>
+        <tr><td>A quality bar</td><td>Scored writing, not vibes</td><td>ten gates, archetype-weighted ranking <span class="pill ship">shipped</span></td></tr>
+        <tr><td>Tests</td><td>Pre-registered evals with baselines</td><td>blind-judged eval, 4/4 detection <span class="pill ship">shipped</span></td></tr>
+        <tr><td>Linting</td><td>Config + structure validation</td><td><code class="inline">--lint-config</code>, skill validator <span class="pill ship">shipped</span></td></tr>
+        <tr><td>CI gates</td><td>Freshness checked on every change</td><td>drift detector: hook → PR → merge → sweep <span class="pill ship">shipped</span></td></tr>
+        <tr><td>Regression alarms</td><td>Docs can't silently fall behind</td><td>a Stop hook that won't let go <span class="pill ship">shipped</span></td></tr>
+      </table></div>
+      <p class="footlink">The rest of this deck is that thesis, built: <b>a README with a test suite.</b></p>
+    </div>
+  </section>
+
+  <section class="slide" aria-label="The problem">
+    <div class="wrap">
+      <div class="kicker">01 · The problem</div>
+      <h2>A README rots the moment the code moves<br>and nobody notices.</h2>
+      <p class="lede">The front page is built from a handful of signal files. Every one of them changes for reasons that have nothing to do with documentation — and each change quietly turns the README into a lie.</p>
+      <div class="cols c2">
+        <div class="card">
+          <h3><span class="mono">package.json · pyproject.toml · Cargo.toml</span></h3>
+          <p>Manifests change your install line and your dependencies. The quickstart that used to work now returns an error nobody screenshots.</p>
+        </div>
+        <div class="card">
+          <h3><span class="mono">bin/ · src/ · cmd/ · cli/</span></h3>
+          <p>Entrypoints change your quickstart and your API surface. The example command on the front page invokes a flag that no longer exists.</p>
+        </div>
+        <div class="card">
+          <h3><span class="mono">.github/workflows/ · install.sh · Makefile</span></h3>
+          <p>CI and install scripts change your badges and your setup steps. The green badge points at a workflow that was renamed months ago.</p>
+        </div>
+        <div class="card">
+          <h3><span class="mono">SKILL.md</span></h3>
+          <p>For an agent skill, this file <em>is</em> the product. When it changes and the README does not, the front page describes a different tool.</p>
+        </div>
+      </div>
+      <p class="note">Nobody edits a README to break it. It breaks by omission — code moves, the page doesn't, and the first thing every visitor reads is the least reliable file in the repo.</p>
+    </div>
+  </section>
+
+  <!-- ================================ 3 · WHAT IT IS ================================ -->
+  <section class="slide" aria-label="What it is">
+    <div class="wrap">
+      <div class="kicker">02 · What it is</div>
+      <h2>Three surfaces, one drift logic.</h2>
+      <p class="lede">A self-contained folder of Markdown plus one POSIX-shell hook — no runtime dependencies, nothing to build, nothing tied to a single vendor.</p>
+      <div class="cols c3">
+        <div class="card">
+          <h3>Agent Skill</h3>
+          <p>Plain Markdown that any capable agent can follow: Claude Code and Copilot load it natively, opencode reads the Claude path, and everything else hooks in via one <code class="inline">AGENTS.md</code> line. Detects the repo's archetype, drafts competing candidates, and ranks them through ten weighted gates.</p>
+        </div>
+        <div class="card">
+          <h3>Drift detector</h3>
+          <p>One POSIX shell script, pure local git. Runs as a Claude Code <b>Stop hook</b> in-session, and standalone as <code class="inline">--check</code> for CI, git hooks, and any other agent. No network, no state surprises, no way to break a session.</p>
+        </div>
+        <div class="card">
+          <h3>GitHub Action</h3>
+          <p>A composite action wrapping the same script with <code class="inline">--check --range</code>. Comments on — or fails — a pull request that leaves the README behind. Catches drift from contributors who use no agent at all.</p>
+        </div>
+      </div>
+      <p class="note">One detector, one config. All three surfaces read the same <code class="inline">.readmedaddy.json</code>, so a project defines "what counts as drift" exactly once.</p>
+    </div>
+  </section>
+
+  <!-- ================================ 4 · GENERATION ================================ -->
+  <section class="slide" aria-label="How generation works">
+    <div class="wrap">
+      <div class="kicker">03 · Generation</div>
+      <h2>Five steps. The fourth is the differentiator.</h2>
+      <div class="pipe">
+        <div class="step"><div class="n">1</div><div class="t">Detect</div><div class="d">resolve the repo to one of ten archetypes from manifests &amp; entrypoints</div></div>
+        <div class="arr">▶</div>
+        <div class="step"><div class="n">2</div><div class="t">Pull</div><div class="d">load that archetype's winning patterns, sections &amp; exemplars</div></div>
+        <div class="arr">▶</div>
+        <div class="step"><div class="n">3</div><div class="t">Generate</div><div class="d">2–3 genuinely different candidates per key section</div></div>
+        <div class="arr">▶</div>
+        <div class="step"><div class="n">4</div><div class="t">Rank</div><div class="d">score every candidate through 10 gates, archetype-weighted</div></div>
+        <div class="arr">▶</div>
+        <div class="step"><div class="n">5</div><div class="t">Assemble</div><div class="d">stitch the winner, graft runner-up wins, verify every claim</div></div>
+      </div>
+      <div class="cols c2">
+        <div class="card">
+          <h3>Ten archetypes</h3>
+          <p>CLI · library · framework · app/SaaS · infra/devops · data/ML · <b>agent skill/plugin</b> · research · monorepo · internal tool. A good README for a CLI is a bad README for a library, so each repo is scored against <em>its own</em> genre, never a generic checklist.</p>
+        </div>
+        <div class="card">
+          <h3>Tournament mode, when it matters</h3>
+          <p>For a front page that materially moves adoption: five to seven whole-README drafts in distinct styles, scored by a three-judge panel (first-impression, craft, ASCII/design). The top draft becomes the skeleton; per-gate winners are grafted in; the merge is kept only if a re-score beats every input.</p>
+        </div>
+      </div>
+      <p class="note">Step 5 is non-negotiable: every factual claim — install commands, file paths, version, license — is checked against the repo before a line ships. No invented benchmarks, no fake stars, no badge for a thing that does not exist.</p>
+    </div>
+  </section>
+
+  <!-- ================================ 5 · RUBRIC ================================ -->
+  <section class="slide" aria-label="The rubric">
+    <div class="wrap">
+      <div class="kicker">04 · The rubric</div>
+      <h2>Ten gates, weighted by archetype.</h2>
+      <p class="lede">Every candidate is scored 0–5 per gate against concrete anchors. The score is the selection function, not a report card.</p>
+      <div class="tblwrap">
+        <table class="tbl">
+          <tr><th>Gate</th><th>What it measures</th><th>Gate</th><th>What it measures</th></tr>
+          <tr><td><b>G1</b> Hook</td><td>first screen: what it is + why you'd care, in one line</td><td><b>G6</b> Completeness</td><td>usage, config, examples, links, license — without bloat</td></tr>
+          <tr><td><b>G2</b> Identity / trust</td><td>name, one-liner, real badges — never a fabricated count</td><td><b>G7</b> Credibility</td><td>real examples, tests/CI signals, honest limitations</td></tr>
+          <tr><td><b>G3</b> Visual</td><td>a wordmark, diagram, screenshot, or demo that earns its space</td><td><b>G8</b> Contextual fit</td><td>follows the conventions of its archetype</td></tr>
+          <tr><td><b>G4</b> Quickstart</td><td>install + smallest real usage in under 30s, copy-paste correct</td><td><b>G9</b> Community / maint</td><td>contributing, code of conduct, changelog, support/roadmap</td></tr>
+          <tr><td><b>G5</b> Scannability</td><td>heading hierarchy, short paragraphs, tables, a TOC once long</td><td><b>G10</b> Voice</td><td>distinct, confident, free of AI-slop</td></tr>
+        </table>
+      </div>
+      <div class="cols c2">
+        <div class="card">
+          <h3>The weighting math</h3>
+          <p>Every gate starts at base weight <b>2</b>. Each archetype bumps its three heaviest gates by <b>+4, +3, +2</b>, so every row sums to <b>29</b> and the maximum weighted score is always <span class="mono">29 × 5 = 145</span>. Normalized total: <span class="mono">round(Σ wᵢ·sᵢ / 145 × 100, 1)</span>.</p>
+          <p style="margin-top:8px">A CLI bumps G3 demo (6), G4 quickstart (5), G1 hook (4). An agent skill bumps G1 hook (6), G4 examples (5), G8 fit (4).</p>
+        </div>
+        <div class="card">
+          <h3>The same numbers drive the fix list</h3>
+          <p>Each gate's <b>deficit</b> — <span class="mono">wᵢ × (5 − sᵢ)</span> — is how many normalized points that gate leaves on the table. Rank fixes by deficit, highest first: a weak gate the archetype cares about always outranks a weak gate it doesn't. The rubric prioritizes the work instead of leaving every gap looking equal.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ 6 · DRIFT HOOK ================================ -->
+  <section class="slide" aria-label="The drift hook">
+    <div class="wrap">
+      <div class="kicker">05 · The drift hook</div>
+      <h2>The Stop hook notices what you didn't.</h2>
+      <p class="lede">When a session's changes touch the watched signal files but not the README, the hook prompts a refresh <em>through the skill, in the same session</em> — while the full context is still loaded. It detects drift and asks; it never rewrites your README on its own.</p>
+      <div class="tblwrap">
+        <table class="tbl">
+          <tr><th>Mode</th><th>Channel</th><th>Fires</th><th>Use it when</th></tr>
+          <tr><td><b>auto</b> <span class="pill acc">default</span></td><td><span class="mono">decision: block</span> on stdout</td><td>once per distinct drift</td><td>you want one clear nudge, then silence until something new drifts</td></tr>
+          <tr><td><b>notify</b></td><td>one line on stderr</td><td>once per distinct drift</td><td>awareness without a handoff — nothing blocked, nothing continued</td></tr>
+          <tr><td><b>enforce</b></td><td><span class="mono">decision: block</span> on stdout</td><td>every Stop until the README changes</td><td>the project has a hard "README tracks code" rule</td></tr>
+        </table>
+      </div>
+      <div class="cols c2">
+        <div class="card">
+          <h3>Loop safety, twice over</h3>
+          <ul>
+            <li><b><code class="inline">stop_hook_active</code> guard</b> — when Claude Code re-runs the hook as part of a hook-driven continuation, it exits immediately. It can never fire twice in one turn.</li>
+            <li><b>Cooldown state</b> — a signature of the handled drift (short HEAD sha + sorted dirty watched files) is written to <code class="inline">.git/readmedaddy-state</code>. Identical signature next Stop → silence. <code class="inline">enforce</code> deliberately skips recording.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Incapable of breaking a session</h3>
+          <ul>
+            <li>No git repo, no README, or <code class="inline">enabled: false</code> → does nothing.</li>
+            <li>Every branch exits <b>0</b> — there is no failure path.</li>
+            <li>State lives <em>inside</em> <code class="inline">.git/</code>: never an untracked file in your tree, never needs a gitignore entry.</li>
+            <li>Session override: <code class="inline">README_DADDY_HOOK=notify|enforce|off</code>.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ 7 · --CHECK ================================ -->
+  <section class="slide" aria-label="Agent-agnostic check mode">
+    <div class="wrap">
+      <div class="kicker">06 · Agent-agnostic <span style="text-transform:none">--check</span></div>
+      <h2>The same detector, anywhere. No agent required.</h2>
+      <pre class="code"><span class="cm"># working tree (+ last-commit fallback)</span>
+skills/readmedaddy/hooks/readme-drift.sh <span class="k">--check</span>
+
+<span class="cm"># commit range, for CI</span>
+skills/readmedaddy/hooks/readme-drift.sh <span class="k">--check --range</span> origin/main...HEAD</pre>
+      <div class="exits">
+        <div class="exit e0"><div class="code">0</div><div class="what">fresh</div><p>— or nothing to check: no git repo, no README, or <code class="inline">enabled: false</code></p></div>
+        <div class="exit e1"><div class="code">1</div><div class="what">drift</div><p>the drifted watched files print to stdout, one per line</p></div>
+        <div class="exit e2"><div class="code">2</div><div class="what">usage / git error</div><p>bad <code class="inline">--range</code> — loud on purpose, so a misconfigured CI gate fails visibly</p></div>
+      </div>
+      <div class="cols c2">
+        <div class="card">
+          <h3>Deliberate semantics</h3>
+          <ul>
+            <li><b>Idempotent and stateless</b> — reads no stdin, writes no cooldown state; run it twice, get the same answer twice.</li>
+            <li><b>Ignores <code class="inline">README_DADDY_HOOK</code></b> — that env var is session-scoped; an explicit <code class="inline">--check</code> should always answer.</li>
+            <li><b>Respects <code class="inline">.readmedaddy.json</code></b> — one config governs every surface.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Pre-commit wiring — warns, never blocks</h3>
+          <pre class="code" style="margin-top:8px"><span class="cm"># .git/hooks/pre-commit</span>
+~/.claude/skills/readmedaddy/hooks/readme-drift.sh <span class="k">--check</span> \
+  || echo <span class="k">"readmedaddy: consider refreshing the README before you push"</span></pre>
+          <p style="margin-top:8px">Works for every agent and every human on the machine.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ 8 · GITHUB ACTION ================================ -->
+  <section class="slide" aria-label="The GitHub Action">
+    <div class="wrap">
+      <div class="kicker">07 · The GitHub Action</div>
+      <h2>A PR gate for contributors who use no agent at all.</h2>
+      <pre class="code"><span class="k">on:</span> pull_request
+<span class="k">permissions:</span> { contents: read, pull-requests: write }
+<span class="k">steps:</span>
+  - <span class="k">uses:</span> actions/checkout@v4
+    <span class="k">with:</span> { fetch-depth: 0 }        <span class="cm"># the range diff needs the merge-base</span>
+  - <span class="k">uses:</span> Systemartis/readmedaddy@v0
+    <span class="k">with:</span> { mode: comment }         <span class="cm"># one sticky PR comment; 'fail' = required check</span></pre>
+      <div class="cols c2">
+        <div class="card">
+          <h3><span class="mono">mode: comment</span> — advisory</h3>
+          <ul>
+            <li>Posts <b>one sticky comment</b> naming the drifted files, found by a hidden marker and <b>updated in place</b> on later pushes — never a pile-up.</li>
+            <li>On fork PRs (read-only token) it degrades gracefully: a warning plus a step summary instead of a red advisory check.</li>
+            <li>Drifted filenames are sanitized against markdown fence injection.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3><span class="mono">mode: fail</span> — the gate</h3>
+          <ul>
+            <li>Fails the job when drift is detected — usable as a <b>required check</b>.</li>
+            <li>Makes <b>no API calls at all</b> in this mode.</li>
+            <li>Outputs for downstream steps: <code class="inline">drift</code> ("true"/"false") and <code class="inline">files</code> (newline-separated).</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">Pure local git — no LLM, no data leaves the runner. LLM-scored merge gates are deliberately not offered: judge scores wobble between passes, so scoring stays advisory. This repo runs the same action on its own pull requests.</p>
+    </div>
+  </section>
+
+  <!-- ================================ 9 · LOCAL-ONLY ================================ -->
+  <section class="slide" aria-label="Local-only guarantee">
+    <div class="wrap">
+      <div class="kicker">08 · Local-only by design</div>
+      <h2>Enforced by CI, not just promised.</h2>
+      <div class="cols c2">
+        <div class="card">
+          <h3>No network, ever, in shipped code</h3>
+          <p>The skill is Markdown; the hook, installer, and validator are POSIX shell and stdlib Python doing local git and file reads. A <b>no-network guard</b> in <code class="inline">scripts/validate-skill.py</code> fails the build if any network primitive appears in any shipped <code class="inline">.sh</code> or <code class="inline">.py</code> file:</p>
+          <pre class="code" style="margin-top:10px">curl · wget · urllib · socket · requests. · /dev/tcp · …</pre>
+        </div>
+        <div class="card">
+          <h3>The skill orders the model offline</h3>
+          <p>SKILL.md's contract: every fact comes from the local repository — no web searches, no remote templates, no URL lookups. The README canon it draws on is baked into the reference files so nothing needs fetching.</p>
+          <h3 style="margin-top:14px">No telemetry, no accounts</h3>
+          <p>Nothing is collected, counted, or reported anywhere. There is no server side. Bounded, atomic writes: one README, one cooldown file inside <code class="inline">.git/</code>, and (Claude Code only) a temp-file-plus-rename settings merge.</p>
+        </div>
+      </div>
+      <div class="cols c2">
+        <div class="card">
+          <h3>Why this matters vs SaaS drift tools</h3>
+          <p>In a 28-tool survey of the drift-detection field (2026), every LLM-powered rival pays network, tokens, or a SaaS subscription <em>for detection itself</em> — code ships to someone's cloud just to learn whether the README is stale. readmedaddy's detection is deterministic local git: free to run on every Stop, every commit, every PR.</p>
+        </div>
+        <div class="card">
+          <h3>The one honest boundary</h3>
+          <p>Your agent's own model traffic is outside readmedaddy's control. Run Claude Code or Copilot against a cloud model and your repo context goes wherever your agent sends it — for readmedaddy exactly as for every other task. Pair the skill with a locally-hosted model and the entire loop is airgap-friendly.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ 10 · EVAL ================================ -->
+  <section class="slide" aria-label="Eval receipts">
+    <div class="wrap">
+      <div class="kicker">09 · Eval receipts</div>
+      <h2>Thresholds pre-registered before any run.<br>The first run cleared all of them.</h2>
+      <p class="lede">Hypothesis, thresholds, floor, and falsifiers were committed before execution; nothing was chosen after seeing a result. The bar was conjunctive and per-fixture: <b>4/4</b> detection, <b>≥ +20</b> lift on <em>every</em> fixture, an absolute floor of <b>70/100</b> — no strong average can hide a weak fixture.</p>
+      <div class="tblwrap">
+        <table class="tbl">
+          <tr><th>Fixture</th><th>Archetype</th><th class="num">Baseline /100</th><th class="num">readmedaddy /100</th><th class="num">Lift</th><th>Detection</th></tr>
+          <tr><td>cli-fixture</td><td>CLI</td><td class="num">15.9</td><td class="num">75.2</td><td class="num">+59.3</td><td><span class="pill ship">correct</span></td></tr>
+          <tr><td>lib-fixture</td><td>library</td><td class="num">13.1</td><td class="num">71.7</td><td class="num">+58.6</td><td><span class="pill ship">correct</span></td></tr>
+          <tr><td>skill-fixture</td><td>agent skill</td><td class="num">12.4</td><td class="num">77.9</td><td class="num">+65.5</td><td><span class="pill ship">correct</span></td></tr>
+          <tr><td>research-fixture</td><td>research</td><td class="num">9.7</td><td class="num">89.0</td><td class="num">+79.3</td><td><span class="pill ship">correct</span></td></tr>
+        </table>
+      </div>
+      <div class="cols c2">
+        <div class="card">
+          <h3>Protocol</h3>
+          <p>Mean lift <b>+65.7</b> (threshold ≥ +25). Blind judging: <b>24 independent passes</b> — 8 anonymized READMEs × 3 passes each; no judge saw a pair, a label, or any hint of origin. Median-of-3 per gate; weighted totals recomputed independently by a stdlib-only <code class="inline">score.py</code>, so judge arithmetic was never trusted.</p>
+        </div>
+        <div class="card">
+          <h3>The honest caveats — as pre-registered</h3>
+          <p>The lift is measured against a <b>deliberately thin baseline</b>: this proves skill-vs-baseline, not every alternative approach. The same model family generated and judged (mitigated by blind isolation, not eliminated). Four of ten archetypes exercised. Per-pass judge noise ran up to ~9 points; median-of-3 is the pre-registered damping.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ 11 · INSTALL ================================ -->
+  <section class="slide" aria-label="Install">
+    <div class="wrap">
+      <div class="kicker">10 · Install</div>
+      <h2>One step, every agent.</h2>
+      <pre class="code">git clone https://github.com/Systemartis/readmedaddy.git
+cd readmedaddy &amp;&amp; ./install.sh</pre>
+      <div class="tblwrap">
+        <table class="tbl">
+          <tr><th>Agent</th><th>How it loads readmedaddy</th></tr>
+          <tr><td>Claude Code</td><td><code class="inline">~/.claude/skills/readmedaddy</code> — auto-triggers on the description; the Stop hook registers here too</td></tr>
+          <tr><td>opencode</td><td>reads <code class="inline">~/.claude/skills</code> natively (also installed to <code class="inline">~/.config/opencode/skills</code>)</td></tr>
+          <tr><td>GitHub Copilot</td><td><code class="inline">~/.copilot/skills/readmedaddy</code> — <code class="inline">/skills list</code> to confirm</td></tr>
+          <tr><td>Cursor, Codex, Gemini CLI, Zed, …</td><td>vendor <code class="inline">skills/readmedaddy/</code> into the repo + one line in <code class="inline">AGENTS.md</code></td></tr>
+          <tr><td>Any other agent</td><td><code class="inline">DEST=/path ./install.sh</code> — plain Markdown; any agent that can read files can follow it</td></tr>
+        </table>
+      </div>
+      <p class="note"><code class="inline">./install.sh</code> copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with <code class="inline">--no-hook</code>; remove it later with <code class="inline">python3 scripts/install-hook.py --uninstall</code>. The installer makes no network calls and is safe to re-run.</p>
+    </div>
+  </section>
+
+  <!-- ================================ 12 · TRIGGER LANDSCAPE ================================ -->
+  <section class="slide" aria-label="Trigger landscape">
+    <div class="wrap">
+      <div class="kicker">11 · Trigger landscape</div>
+      <h2>Catch drift at every moment it can slip through.</h2>
+      <p class="lede">Detection is pure local git, so it is near-free at every layer — the cost lives in CI compute and human friction, never in the detector.</p>
+      <div class="tblwrap">
+        <table class="tbl">
+          <tr><th>Trigger</th><th>Surface</th><th>Effect</th><th>Cost</th><th>Status</th></tr>
+          <tr><td>Session end (Stop hook)</td><td>Claude Code</td><td>README refreshed in-session, full context still loaded — highest-quality fix, earliest moment</td><td>~20 ms of git per Stop; $0 CI</td><td><span class="pill ship">shipped</span></td></tr>
+          <tr><td>pre-commit / pre-push</td><td>any machine, any agent</td><td>warns at commit time via <code class="inline">--check</code>; agent-agnostic</td><td>~20–50 ms per commit; $0</td><td><span class="pill ship">shipped</span></td></tr>
+          <tr><td>PR check</td><td>GitHub Action</td><td>sticky comment (advisory) or required check (<code class="inline">fail</code>) — drift becomes permanent exactly at merge, so gate the merge</td><td>~20–30 s job per PR push; free public, ~$0.004/run private</td><td><span class="pill ship">shipped</span></td></tr>
+          <tr><td>Merge to main</td><td>GitHub Action</td><td>safety net for direct pushes, admin merges, waived checks — one pinned README-health dashboard issue</td><td>one job per push, seconds each</td><td><span class="pill ship">shipped</span></td></tr>
+          <tr><td>Weekly sweep</td><td>GitHub Action (cron)</td><td>freshness audit even when nothing pushes — force-pushes, watch-list edits, pre-existing drift</td><td>1 job/week; negligible</td><td><span class="pill ship">shipped</span></td></tr>
+          <tr><td>Auto-fix agent</td><td>Action + LLM</td><td><code>@readmedaddy fix</code> on a PR — an agent refreshes, a human reviews the diff. Detection never costs tokens</td><td>≈$0.05–$1+ LLM tokens per firing; opt-in only</td><td><span class="pill ship">shipped</span> <span class="pill plan">opt-in</span></td></tr>
+        </table>
+      </div>
+      <p class="note">Not one trigger — a layered stack, each layer catching what the previous one missed, total cost still ~zero until the LLM tier. If forced to pick a single trigger: the PR required check.</p>
+    </div>
+  </section>
+
+  <!-- ================================ 13 · ROADMAP ================================ -->
+  <section class="slide" aria-label="Roadmap v0.3.0">
+    <div class="wrap">
+      <div class="kicker">12 · Roadmap — v0.3.0</div>
+      <h2>The guard release. <span class="pill ship" style="vertical-align:6px">shipped · v0.3.0</span></h2>
+      <p class="lede">Approved design (2026-07-07), pre-implementation. Everything below is a commitment of direction, not a shipped feature.</p>
+      <div class="cols c3">
+        <div class="card">
+          <h3>Guard wizard (<span class="mono">init</span>)</h3>
+          <p>One sitting configures everything: silent local detection pass, then at most 6 questions, each pre-answered from repo evidence. Agent-face, script-face, and an opt-in onboarding PR whose body forecasts which recent PRs would have been flagged. npm-init-style preview before any write; the default path makes zero network calls.</p>
+        </div>
+        <div class="card">
+          <h3>Merge-to-main + scheduled triggers</h3>
+          <p>The action branches on the event instead of hard-skipping non-PR events: push to the default branch feeds one pinned "README health" dashboard issue (or fails the job); a weekly cron sweeps for drift that arrives without a push; merge queues (<span class="mono">merge_group</span>) are supported so a required check never stalls a queue.</p>
+        </div>
+        <div class="card">
+          <h3>Required-check enforcement</h3>
+          <p>Via GitHub <b>rulesets</b>, applied through the user's own <code class="inline">gh</code> auth after explicit confirmation — offering dry-run <span class="mono">evaluate</span> before <span class="mono">active</span>. Classic branch protection is never replaced wholesale. Default is printing the exact recipe; never a silent skip.</p>
+        </div>
+        <div class="card">
+          <h3>Opt-in auto-fix tier</h3>
+          <p><b>Pluggable from day one</b>: runner <span class="mono">off | claude | command</span>, with the Claude path best-tested. Consent surface: an explicit <code class="inline">@readmedaddy fix</code> comment. The agent edits the working tree only; standardized PR mechanics do the rest. Explicitly priced, architecturally separate from detection, loop-immune by default.</p>
+        </div>
+        <div class="card">
+          <h3>Plugin packaging</h3>
+          <p>Two new files make the repo a Claude Code plugin: hook and skill install/uninstall cleanly via <code class="inline">/plugin</code>, superseding the settings.json wiring for Claude users. <code class="inline">install.sh</code> remains for opencode and Copilot.</p>
+        </div>
+        <div class="card">
+          <h3>Config schema v2 + Phase 0 fixes</h3>
+          <p>A <span class="mono">guard</span> section with one vocabulary across all surfaces, a hardened config parser, <span class="mono">--lint-config</span>, and a published JSON Schema. Sequenced first: fixes for hook over-nagging on fresh installs, the offline-mandate contradiction, the README's stale action snippet (plus a moving <span class="mono">@v0</span> tag), and config misparse never resolving to blocking.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ 14 · CLOSE ================================ -->
+  <section class="slide" aria-label="Philosophy">
+    <div class="wrap">
+      <div class="kicker">13 · Philosophy</div>
+      <p class="big-close">Detection is <span class="a">free and deterministic</span>.<br>The LLM only ever writes prose<br><span class="a">a human reviews</span>.</p>
+      <ul class="tight" style="max-width:64ch">
+        <li>Pure local git decides <b>whether</b> the README is stale — no tokens, no network, the same answer twice. That's why it can run on every Stop, every commit, and every PR without costing anything.</li>
+        <li>The model only drafts prose — ranked through ten gates, verified against the repo, and reviewed by you. The hook never edits your files; the action never contacts a third party.</li>
+        <li>Every quality claim traces to a rubric score or a pre-registered eval. The score is earned, not asserted — and the eval can say no.</li>
+      </ul>
+      <div class="badges" style="margin-top:34px">
+        <span class="badge"><b>github.com/Systemartis/readmedaddy</b></span>
+        <span class="badge">MIT © 2026 Systemartis</span>
+        <span class="badge">v<b>0.3.0</b></span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ---------- chrome ---------- -->
+<div id="bar">
+  <div class="brand mono"><b>readmedaddy</b> · v0.3.0</div>
+  <div id="nav">
+    <button id="prev" aria-label="Previous slide">←</button>
+    <span id="counter">1 / 14</span>
+    <button id="next" aria-label="Next slide">→</button>
+  </div>
+  <button id="helpBtn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
+</div>
+
+<div id="help" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="panel">
+    <h3>Keyboard shortcuts</h3>
+    <table>
+      <tr><td><kbd>→</kbd> <kbd>PgDn</kbd> <kbd>Space</kbd></td><td>next slide</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>PgUp</kbd></td><td>previous slide</td></tr>
+      <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>first / last slide</td></tr>
+      <tr><td><kbd>?</kbd></td><td>toggle this help</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>close this help</td></tr>
+    </table>
+    <p class="hint">Slides are deep-linkable: <span class="mono">#/7</span> opens slide 7.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var counter = document.getElementById('counter');
+  var progress = document.getElementById('progress');
+  var prevBtn = document.getElementById('prev');
+  var nextBtn = document.getElementById('next');
+  var help = document.getElementById('help');
+  var helpBtn = document.getElementById('helpBtn');
+  var cur = -1;
+
+  function go(i, updateHash) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i === cur) return;
+    if (cur >= 0) {
+      slides[cur].classList.remove('active');
+      slides[cur].setAttribute('aria-hidden', 'true');
+    }
+    cur = i;
+    slides[cur].classList.add('active');
+    slides[cur].removeAttribute('aria-hidden');
+    slides[cur].scrollTop = 0;
+    counter.textContent = (cur + 1) + ' / ' + slides.length;
+    progress.style.width = (((cur + 1) / slides.length) * 100) + '%';
+    prevBtn.disabled = cur === 0;
+    nextBtn.disabled = cur === slides.length - 1;
+    if (updateHash !== false) {
+      if (history.replaceState) history.replaceState(null, '', '#/' + (cur + 1));
+      else location.hash = '#/' + (cur + 1);
+    }
+  }
+
+  function fromHash() {
+    var m = location.hash.match(/^#\/(\d+)/);
+    var n = m ? parseInt(m[1], 10) - 1 : 0;
+    go(isNaN(n) ? 0 : n, false);
+  }
+
+  function toggleHelp(force) {
+    var open = typeof force === 'boolean' ? force : !help.classList.contains('open');
+    help.classList.toggle('open', open);
+  }
+
+  prevBtn.addEventListener('click', function () { go(cur - 1); });
+  nextBtn.addEventListener('click', function () { go(cur + 1); });
+  helpBtn.addEventListener('click', function () { toggleHelp(); });
+  help.addEventListener('click', function (e) { if (e.target === help) toggleHelp(false); });
+  window.addEventListener('hashchange', fromHash);
+
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === '?') { toggleHelp(); e.preventDefault(); return; }
+    if (e.key === 'Escape') { toggleHelp(false); return; }
+    if (help.classList.contains('open')) return;
+    switch (e.key) {
+      case 'ArrowRight': case 'PageDown': case ' ':
+        go(cur + 1); e.preventDefault(); break;
+      case 'ArrowLeft': case 'PageUp':
+        go(cur - 1); e.preventDefault(); break;
+      case 'Home':
+        go(0); e.preventDefault(); break;
+      case 'End':
+        go(slides.length - 1); e.preventDefault(); break;
+    }
+  });
+
+  slides.forEach(function (s, idx) { if (idx !== 0) s.setAttribute('aria-hidden', 'true'); });
+  fromHash();
+})();
+</script>
+</body>
+</html>

@@ -168,7 +168,8 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
     if ".git" in dirpath.split(os.sep):
         continue
     for fn in filenames:
-        if fn.endswith((".md", ".sh", ".py", ".yml", ".yaml")):
+        # .html included: the published presentation deck is repo content too.
+        if fn.endswith((".md", ".sh", ".py", ".yml", ".yaml", ".html", ".js", ".mjs", ".json")):
             scan.append(os.path.join(dirpath, fn))
 for p in scan:
     if os.path.abspath(p) == self_path:
