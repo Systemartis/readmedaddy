@@ -281,6 +281,10 @@ NET_PRIMITIVES = [
     r"\burllib\b", r"\brequests\.", r"\bhttpx\b", r"\baiohttp\b",
     r"\bsocket\b", r"http\.client", r"\burlopen\b", r"\bftplib\b",
     r"\bsmtplib\b", r"\btelnetlib\b",
+    # JavaScript/TypeScript primitives (the opencode plugin ships as .js):
+    r"\bfetch\s*\(", r"XMLHttpRequest", r"\bWebSocket\b", r"Bun\.connect",
+    r"node:net", r"node:http", r"node:https", r"node:dgram", r"node:tls",
+    r"\baxios\b",
 ]
 net_scanned = 0
 for dirpath, dirnames, filenames in os.walk(ROOT):
@@ -290,7 +294,7 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
     if ".git" in dirpath.split(os.sep):
         continue
     for fn in filenames:
-        if not fn.endswith((".sh", ".py")):
+        if not fn.endswith((".sh", ".py", ".js", ".mjs", ".ts")):
             continue
         p = os.path.join(dirpath, fn)
         if os.path.abspath(p) == self_path:

@@ -1,0 +1,13 @@
+{
+  "_README": "readmedaddy drift notifier for GitHub Copilot CLI. sessionEnd runs the local drift detector (POSIX sh + git, zero network); exit 2 surfaces the warning on stderr per Copilot's hook contract, and every other outcome stays silent. Notify-only: it cannot block, cannot edit files, cannot alter the agent. Installed by install.sh to ~/.copilot/hooks/readmedaddy.json. Per-repo off switch: {\"hook\":{\"enabled\":false}} in .readmedaddy.json.",
+  "version": 1,
+  "hooks": {
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "f=$(\"$HOME/.copilot/skills/readmedaddy/hooks/readme-drift.sh\" --check 2>/dev/null); rc=$?; if [ \"$rc\" -eq 1 ]; then printf 'readmedaddy: %s changed but the README did not - ask for readmedaddy to refresh it.\\n' \"$(printf '%s' \"$f\" | tr '\\n' ' ')\" >&2; exit 2; fi; exit 0",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

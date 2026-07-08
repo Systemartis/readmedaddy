@@ -202,12 +202,12 @@ cd readmedaddy && ./install.sh
 | Agent | How it loads readmedaddy |
 |---|---|
 | **Claude Code** | `~/.claude/skills/readmedaddy` — auto-triggers on the description; `/skills` lists it. The Stop hook registers here too. |
-| **opencode** | reads `~/.claude/skills` natively (also installed to `~/.config/opencode/skills`) |
-| **GitHub Copilot** (CLI / coding agent) | `~/.copilot/skills/readmedaddy` — `/skills list` to confirm |
+| **opencode** | reads `~/.claude/skills` natively (also installed to `~/.config/opencode/skills`) — plus a `session.idle` drift notifier plugin |
+| **GitHub Copilot** (CLI / coding agent) | `~/.copilot/skills/readmedaddy` — `/skills list` to confirm — plus a `sessionEnd` drift notifier hook |
 | **Cursor, Codex, Gemini CLI, Zed**, anything that reads `AGENTS.md` | vendor `skills/readmedaddy/` into the repo and add one line to `AGENTS.md`: *"When asked to write or improve a README, follow `skills/readmedaddy/SKILL.md`."* |
 | **Any other agent** | `DEST=/path ./install.sh` — the skill is plain Markdown; any agent that can read files can follow it |
 
-`./install.sh` copies the skill to each destination, verifies every copy landed, then registers the Stop hook (Claude Code, user-global). Skip the hook with `--no-hook`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and (Claude Code only) your `settings.json`, and is safe to re-run.
+`./install.sh` copies the skill to each destination, verifies every copy landed, then wires the drift detector into each agent it finds: the Stop hook for Claude Code (blocks once per drift event and hands off to the skill), and **notify-only** session-end hooks for opencode and Copilot CLI (they warn, and by construction cannot block, edit, or inject anything — enforcement for those agents lives in the pre-commit hook and CI gate instead). Skip all hook wiring with `--no-hook`. [`install.sh`](install.sh) makes no network calls, touches nothing outside the destinations and the agents' own hook locations, and is safe to re-run.
 
 **Uninstall — one command, complete removal:** `./install.sh --uninstall` deletes every installed skill copy and removes the Stop-hook entry from your `settings.json`, printing each path it touches. Nothing else on the machine is affected.
 

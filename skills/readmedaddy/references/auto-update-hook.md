@@ -192,6 +192,19 @@ Semantics that differ from Stop-hook mode, deliberately:
   `--config /dev/null` runs on pure defaults. CI gates use this to read the
   config from the PR's base ref, so a PR cannot waive its own gate.
 
+**opencode and Copilot session-end notifiers** (installed by `install.sh`
+wherever those agents' home directories exist): the same detector wired to
+each agent's own hook surface — a `session.idle` plugin for opencode
+(`~/.config/opencode/plugins/readmedaddy-drift.js`, single file, zero
+dependencies) and a `sessionEnd` hook for Copilot CLI
+(`~/.copilot/hooks/readmedaddy.json`). Both are deliberately **notify-only**,
+strictly weaker than the Claude Code Stop hook: they warn when the README
+fell behind, and can never block a session, edit a file, inject anything
+into the agent's context, or touch the network. Drift enforcement for these
+agents happens one layer down (pre-commit / CI), same as for no agent at
+all. Per-repo off switch: `"hook": {"enabled": false}` — the detector itself
+honors it on every surface.
+
 **Git pre-commit warning** (universal — no agent, warns without blocking):
 
 ```sh

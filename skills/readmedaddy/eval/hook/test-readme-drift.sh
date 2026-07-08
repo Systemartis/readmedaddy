@@ -694,6 +694,33 @@ else
 	note fail "--raw expected fail/<empty> rc 0/0 (got: '$v1'/'$v2' rc $rc1/$rc2)"
 fi
 
+# --- Copilot sessionEnd adapter (notify-only contract) ---
+
+# (ax) The bash command shipped in copilot-hooks.json: drift -> exit 2 with a
+# stderr warning (Copilot's warning contract); fresh and non-repo -> exit 0
+# silent. Runs the REAL command string against a sandbox HOME.
+if command -v python3 >/dev/null 2>&1; then
+	cp_json="$SCRIPT_DIR/../../hooks/copilot-hooks.json"
+	cp_cmd=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hooks"]["sessionEnd"][0]["bash"])' "$cp_json")
+	cp_home=$(mktemp -d "$TMPROOT/cp-home.XXXXXX")
+	mkdir -p "$cp_home/.copilot/skills/readmedaddy/hooks"
+	cp "$HOOK" "$cp_home/.copilot/skills/readmedaddy/hooks/readme-drift.sh"
+
+	d=$(setup_repo)
+	printf '{"name":"x","v":2}\n' >"$d/package.json"
+	cp_err=$( (cd "$d" && HOME=$cp_home sh -c "$cp_cmd" 2>&1 >/dev/null) ); rc1=$?
+	d2=$(setup_repo)
+	(cd "$d2" && HOME=$cp_home sh -c "$cp_cmd" >/dev/null 2>&1); rc2=$?
+	d3=$(mktemp -d "$TMPROOT/cp-norepo.XXXXXX")
+	(cd "$d3" && HOME=$cp_home sh -c "$cp_cmd" >/dev/null 2>&1); rc3=$?
+	if [ "$rc1" = 2 ] && printf '%s' "$cp_err" | grep -q 'package.json' \
+		&& [ "$rc2" = 0 ] && [ "$rc3" = 0 ]; then
+		note ok "COPILOT adapter: drift warns (exit 2), fresh + non-repo silent (exit 0)"
+	else
+		note fail "COPILOT adapter expected 2/0/0 + warning (got: $rc1/$rc2/$rc3, err: $cp_err)"
+	fi
+fi
+
 printf '\n--- summary: %d passed, %d failed ---\n' "$PASS" "$FAIL"
 if [ "$FAIL" -ne 0 ]; then
 	exit 1

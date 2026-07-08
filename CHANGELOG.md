@@ -4,6 +4,27 @@ All notable changes to readmedaddy are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Session-end drift notifiers for opencode and GitHub Copilot CLI** — the
+  in-session surface is no longer Claude-Code-only. `install.sh` wires the
+  same detector into each agent it finds: a `session.idle` plugin for
+  opencode (single file, zero dependencies) and a `sessionEnd` hook for
+  Copilot (`~/.copilot/hooks/readmedaddy.json`). Both are **notify-only by
+  construction**: they warn when the README fell behind and cannot block a
+  session, edit a file, inject anything into the agent's context, or touch
+  the network. Fail-open everywhere; removed completely by
+  `install.sh --uninstall`; per-repo off switch honored
+  (`"hook": {"enabled": false}`).
+- The **no-network CI guard now scans JavaScript/TypeScript** too
+  (`fetch(`, `WebSocket`, `node:net`, …) — the local-only invariant is
+  enforced for every shipped executable, not just sh and python.
+- New tests: a stubbed-runtime behavioral suite for the opencode plugin
+  (drift warns once, fresh/non-repo silent, shell failures swallowed) and a
+  harness case running the real Copilot hook command end-to-end.
+
 ## [0.3.0] - 2026-07-08
 
 The guard release: one wizard configures every drift surface — session-end

@@ -54,6 +54,13 @@ $HOME/.copilot/skills/readmedaddy"
       echo "not present: $t"
     fi
   done
+  for f in "$HOME/.config/opencode/plugins/readmedaddy-drift.js" \
+           "$HOME/.copilot/hooks/readmedaddy.json"; do
+    if [ -f "$f" ]; then
+      rm -f "$f"
+      echo "removed: $f"
+    fi
+  done
   if command -v python3 >/dev/null 2>&1; then
     python3 "$REPO/scripts/install-hook.py" --uninstall
   else
@@ -128,6 +135,22 @@ fi
 echo "Installed. The skill triggers on its description, or invoke it by name: readmedaddy."
 echo "  Claude Code: /skills lists it.  opencode: picked up automatically."
 echo "  Copilot CLI: /skills list.  Other agents: see README — one AGENTS.md line."
+
+# Session-end drift notifiers for the other agents — notify-only (they can
+# warn, never block, never edit, never touch the network), installed ONLY
+# where that agent's home directory already exists.
+if [ "$INSTALL_HOOK" -eq 1 ] && [ -z "${DEST:-}" ]; then
+  if [ -d "$HOME/.config/opencode" ]; then
+    mkdir -p "$HOME/.config/opencode/plugins"
+    cp "$SRC/hooks/opencode-drift-plugin.js" "$HOME/.config/opencode/plugins/readmedaddy-drift.js"
+    echo "  ok    opencode session.idle notifier -> ~/.config/opencode/plugins/readmedaddy-drift.js"
+  fi
+  if [ -d "$HOME/.copilot" ]; then
+    mkdir -p "$HOME/.copilot/hooks"
+    cp "$SRC/hooks/copilot-hooks.json" "$HOME/.copilot/hooks/readmedaddy.json"
+    echo "  ok    Copilot sessionEnd notifier -> ~/.copilot/hooks/readmedaddy.json"
+  fi
+fi
 
 HOOK="$PRIMARY/hooks/readme-drift.sh"
 if [ "$INSTALL_HOOK" -eq 1 ] && ! command -v python3 >/dev/null 2>&1; then
