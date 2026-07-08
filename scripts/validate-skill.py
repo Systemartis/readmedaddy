@@ -171,8 +171,23 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
         # .html included: the published presentation deck is repo content too.
         if fn.endswith((".md", ".sh", ".py", ".yml", ".yaml", ".html", ".js", ".mjs", ".json")):
             scan.append(os.path.join(dirpath, fn))
+# Clean-for-PUBLISH means exactly that: scan what would be published. Local
+# gitignored files (private notes, planning artifacts) are not shipped and
+# must not fail the guard on a maintainer's machine. Outside a git repo (or
+# without git), degrade to scanning everything — CI checkouts have git.
+import subprocess
+
+_ignored = set()
+try:
+    _res = subprocess.run(
+        ["git", "-C", ROOT, "check-ignore", "--stdin"],
+        input="\n".join(scan), capture_output=True, text=True, timeout=30,
+    )
+    _ignored = set(_res.stdout.splitlines())
+except (OSError, subprocess.TimeoutExpired):
+    pass
 for p in scan:
-    if os.path.abspath(p) == self_path:
+    if os.path.abspath(p) == self_path or p in _ignored:
         continue
     try:
         low = read(p).lower()
