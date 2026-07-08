@@ -15,10 +15,14 @@
   // eval/results hold generated output — neither is documentation, so skip them.
   // docs/tournament-drafts hold the verbatim competing README drafts archived
   // from the ranking tournament — preserved as-authored artifacts, not docs.
+  // docs/superpowers holds engineering specs/plans that embed verbatim code
+  // (tab-indented sh matching the hook's own style) — artifacts, not docs.
   "ignores": [
     "node_modules",
     "**/eval/fixtures/**",
     "**/eval/results/**",
-    "**/tournament-drafts/**"
+    "**/tournament-drafts/**",
+    "docs/superpowers/**",
+    "docs/backlog.md"
   ]
 }
